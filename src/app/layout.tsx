@@ -9,6 +9,10 @@ import {
   UserButton,
 } from "@clerk/nextjs";
 import { type Metadata } from "next";
+import { JetBrains_Mono } from "next/font/google";
+import { cn } from "~/lib/utils";
+
+const jetbrainsMono = JetBrains_Mono({subsets:['latin'],variable:'--font-mono'});
 
 export const metadata: Metadata = {
   title: "Devin",
@@ -22,7 +26,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={cn("font-mono", jetbrainsMono.variable)}>
       <body className="antialiased">
         <ClerkProvider>
           <header className="flex h-16 items-center justify-end gap-4 border-b border-slate-200 bg-white/80 px-4 backdrop-blur">
