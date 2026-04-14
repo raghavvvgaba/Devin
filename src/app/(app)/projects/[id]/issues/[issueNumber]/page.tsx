@@ -116,6 +116,16 @@ export default async function ProjectIssuePage({
   const editPreview = pendingEdit
     ? getEditPreviewLines(pendingEdit.updatedContent)
     : null;
+  const nextStepMessage =
+    issueResult.status !== "ok"
+      ? "Restore GitHub App access before continuing the issue workflow."
+      : pullRequestResult
+        ? "Pull request is open. Review it on GitHub or return to the project list."
+        : postCommitResult
+          ? "Branch and commit are ready. Open the pull request next."
+          : pendingEdit
+            ? "The edit is staged for this issue. Create the branch and commit next."
+            : "Prepare the file edit for this issue to start the change workflow.";
   const successMessage = query.success
     ? (successMessages[query.success] ?? null)
     : null;
@@ -127,6 +137,16 @@ export default async function ProjectIssuePage({
       title="Issue Terminal"
     >
       <div className="space-y-8">
+        <Alert className="rounded-none border-primary/20 bg-primary/5">
+          <Activity className="h-4 w-4 text-primary" />
+          <AlertTitle className="text-[10px] font-bold uppercase tracking-widest">
+            Next Step
+          </AlertTitle>
+          <AlertDescription className="mt-1 text-xs font-medium uppercase">
+            {nextStepMessage}
+          </AlertDescription>
+        </Alert>
+
         {successMessage ? (
           <Alert className="rounded-none border-emerald-500/20 bg-emerald-500/10 text-emerald-500">
             <Activity className="h-4 w-4 text-emerald-500" />
@@ -319,7 +339,7 @@ export default async function ProjectIssuePage({
                       Pending Edit
                     </span>
                     <span className="text-[10px] font-bold font-mono uppercase">
-                      {pendingEdit ? "READY" : "NONE"}
+                      {pendingEdit ? "PREPARED" : "NOT RUN"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -327,7 +347,7 @@ export default async function ProjectIssuePage({
                       Commit Status
                     </span>
                     <span className="text-[10px] font-bold font-mono uppercase">
-                      {postCommitResult ? "RECORDED" : "NOT RUN"}
+                      {postCommitResult ? "RECORDED" : "PENDING"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-border pt-3">
@@ -335,7 +355,7 @@ export default async function ProjectIssuePage({
                       Pull Request
                     </span>
                     <span className="text-[10px] font-bold font-mono uppercase">
-                      {pullRequestResult ? "OPENED" : "NOT RUN"}
+                      {pullRequestResult ? "OPENED" : "PENDING"}
                     </span>
                   </div>
                 </div>

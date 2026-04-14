@@ -54,12 +54,25 @@ export default async function GithubOnboardingPage({
       : params.success === "disconnected"
         ? "GitHub identity unmapped. Local project records purged."
         : null;
+  const nextStepMessage = !status.connected
+    ? "Connect your GitHub account to unlock repository import."
+    : "Install the GitHub App and continue to repository import.";
 
   return (
     <AppShell
       description="Initialize secure GitHub identity mapping and app installation for repository access."
       title="GitHub Onboarding"
     >
+      <Alert className="rounded-none border-primary/20 bg-primary/5">
+        <Github className="h-4 w-4 text-primary" />
+        <AlertTitle className="text-[10px] font-bold uppercase tracking-widest">
+          Next Step
+        </AlertTitle>
+        <AlertDescription className="text-xs font-medium uppercase mt-2 leading-relaxed">
+          {nextStepMessage}
+        </AlertDescription>
+      </Alert>
+
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
           <Card className="rounded-none border-border shadow-none bg-card">

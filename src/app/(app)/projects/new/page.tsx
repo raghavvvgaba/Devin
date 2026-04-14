@@ -84,6 +84,11 @@ export default async function NewProjectPage({
   const successMessage = params.success
     ? (successMessages[params.success] ?? null)
     : null;
+  const nextStepMessage = !importSession
+    ? "Start a fresh GitHub import session before selecting a repository."
+    : repoList && repoList.length === 0
+      ? "GitHub access is active, but no importable repositories were returned."
+      : "Import a repository marked Ready, or grant access to a locked one.";
 
   return (
     <AppShell
@@ -91,6 +96,16 @@ export default async function NewProjectPage({
       title="Import Resource"
     >
       <div className="space-y-8">
+        <Alert className="rounded-none border-primary/20 bg-primary/5">
+          <Github className="h-4 w-4 text-primary" />
+          <AlertTitle className="text-[10px] font-bold uppercase tracking-widest">
+            Next Step
+          </AlertTitle>
+          <AlertDescription className="text-xs font-medium uppercase mt-1">
+            {nextStepMessage}
+          </AlertDescription>
+        </Alert>
+
         {errorMessage && (
           <Alert variant="destructive" className="rounded-none border-destructive/20 bg-destructive/10">
             <ShieldAlert className="h-4 w-4 text-destructive" />
@@ -176,10 +191,12 @@ export default async function NewProjectPage({
           <div className="flex flex-col items-center justify-center border border-dashed border-border bg-muted/10 py-24 text-center">
             <Database className="h-8 w-8 text-muted-foreground/30 mb-4" />
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Registry Offline
+              {importSession ? "Registry Unavailable" : "Registry Offline"}
             </p>
             <p className="mt-2 text-[10px] text-muted-foreground uppercase max-w-[240px] leading-relaxed">
-              Initialize a fresh GitHub session to scan for importable repository resources.
+              {importSession
+                ? "The current session could not return repository data. Refresh access and try again."
+                : "Initialize a fresh GitHub session to scan for importable repository resources."}
             </p>
           </div>
         ) : (
@@ -200,7 +217,10 @@ export default async function NewProjectPage({
               {repoList.length === 0 && (
                 <div className="bg-card py-12 text-center">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    0 Resources returned by remote host
+                    No Importable Repositories Returned
+                  </p>
+                  <p className="mt-2 text-[10px] text-muted-foreground uppercase">
+                    Refresh access or grant the GitHub App access to a repository and try again.
                   </p>
                 </div>
               )}

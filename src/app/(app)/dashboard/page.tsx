@@ -1,21 +1,26 @@
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { 
-  Github, 
-  CheckCircle2, 
-  AlertCircle, 
-  Plus, 
-  ArrowUpRight, 
-  Layers, 
-  Activity 
+import {
+  Activity,
+  AlertCircle,
+  ArrowUpRight,
+  CheckCircle2,
+  Github,
+  Layers,
+  Plus,
 } from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import { db } from "~/server/db";
 import { getGithubConnectionStatus } from "~/server/github/connection";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
 
 export default async function DashboardPage() {
   const { userId } = await auth();
@@ -32,116 +37,136 @@ export default async function DashboardPage() {
 
   return (
     <AppShell
-      description="System initialization complete. Review your connection status and managed repositories below."
+      description="System initialization complete. Review connection status and continue the workflow from the compact control surface below."
       title="Dashboard"
     >
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card className="rounded-none border-border shadow-none bg-card">
-          <CardHeader className="border-b border-border pb-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                  Integration Status
-                </p>
-                <CardTitle className="text-xl uppercase tracking-tight">GitHub Core</CardTitle>
-              </div>
-              {githubStatus.connected ? (
-                <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/10 rounded-none text-[10px] font-bold uppercase tracking-widest px-2 py-1">
-                  Connected
-                </Badge>
-              ) : (
-                <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/10 rounded-none text-[10px] font-bold uppercase tracking-widest px-2 py-1">
-                  Action Required
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start gap-4 p-4 border border-border bg-muted/30">
-                {githubStatus.connected ? (
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-500 shrink-0" />
-                ) : (
-                  <AlertCircle className="mt-0.5 h-5 w-5 text-amber-500 shrink-0" />
-                )}
-                <div className="space-y-2">
-                  <p className="text-sm font-bold uppercase tracking-tight">
-                    {githubStatus.connected
-                      ? `Access verified as @${githubStatus.githubUsername}`
-                      : "Identity link pending"}
-                  </p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {githubStatus.connected
-                      ? "The secure bridge between Clerk and GitHub is active. You can now perform repository operations and issue synchronization."
-                      : "Repository import requires an active GitHub connection. Authorization is managed via secure OAuth 2.0 protocol."}
-                  </p>
-                </div>
-              </div>
-              
-              {!githubStatus.connected && (
-                <Button asChild className="w-full bg-primary text-primary-foreground font-bold uppercase text-[10px] tracking-widest h-12 rounded-none">
-                  <Link href="/onboarding/github">
-                    Establish Connection
-                  </Link>
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6">
-          <Card className="rounded-none border-border shadow-none bg-primary text-primary-foreground overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-              <Activity className="h-24 w-24" />
-            </div>
-            <CardHeader className="pb-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary-foreground/60">
-                Data Snap
-              </p>
-              <CardTitle className="text-sm uppercase tracking-widest">Active Projects</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-5xl font-bold tracking-tighter">{projectCount}</div>
-              <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-primary-foreground/60">
-                Total Managed Repositories
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-none border-border shadow-none bg-card">
-            <CardHeader className="pb-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                Session Log
-              </p>
-              <CardTitle className="text-sm uppercase tracking-widest">Identity</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-[10px] font-bold uppercase text-muted-foreground">GitHub User</span>
-                <span className="text-xs font-bold font-mono">
-                  {githubStatus.connected ? `@${githubStatus.githubUsername}` : "N/A"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-muted-foreground">Sync State</span>
-                <span className="text-xs font-bold font-mono">
-                  {githubStatus.connected ? "ACTIVE" : "AWAITING"}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="flex justify-end">
+        <div className="flex flex-wrap items-center gap-2">
+          {githubStatus.connected ? (
+            <Badge className="rounded-none px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border-border bg-card text-foreground hover:bg-card">
+              @{githubStatus.githubUsername}
+            </Badge>
+          ) : null}
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+            GitHub
+          </span>
+          <Badge
+            className={`rounded-none px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+              githubStatus.connected
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10"
+                : "border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/10"
+            }`}
+          >
+            {githubStatus.connected ? "Connected" : "Not Connected"}
+          </Badge>
+          <Badge
+            className={`rounded-none px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+              githubStatus.connected
+                ? "border-cyan-500/20 bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/10"
+                : "border-amber-500/20 bg-amber-500/10 text-amber-500 hover:bg-amber-500/10"
+            }`}
+          >
+            {githubStatus.connected ? "Sync Active" : "Sync Awaiting"}
+          </Badge>
         </div>
       </div>
 
-      <div className="mt-8 space-y-6">
-        <div className="flex items-center justify-between border-b border-border pb-6">
+      <section className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
+
+        <Card
+          className="rounded-none border-border bg-card shadow-none"
+          size="sm"
+        >
+          <CardHeader className="border-b border-border pb-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                  Integration
+                </p>
+                <CardTitle className="text-sm uppercase tracking-tight">
+                  GitHub Core
+                </CardTitle>
+              </div>
+              <Github className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="flex items-start gap-3">
+              {githubStatus.connected ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+              ) : (
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              )}
+                <div className="space-y-1">
+                  <p className="text-xs font-bold uppercase tracking-tight">
+                    {githubStatus.connected
+                      ? `@${githubStatus.githubUsername}`
+                      : "Identity Link Pending"}
+                  </p>
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {githubStatus.connected
+                      ? "Ready for repo operations"
+                      : "OAuth required before import"}
+                  </p>
+                </div>
+              </div>
+              {!githubStatus.connected ? (
+                <div className="mt-4">
+                  <Button
+                    asChild
+                    size="sm"
+                    className="h-8 rounded-none px-3 text-[10px] font-bold uppercase tracking-widest"
+                  >
+                    <Link href="/onboarding/github">Connect</Link>
+                  </Button>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+        <Card
+          className="overflow-hidden rounded-none border-border bg-primary text-primary-foreground shadow-none"
+          size="sm"
+        >
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary-foreground/60">
+                  Snapshot
+                </p>
+                <CardTitle className="text-sm uppercase tracking-tight">
+                  Projects
+                </CardTitle>
+              </div>
+              <Activity className="h-4 w-4 text-primary-foreground/70" />
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="text-3xl font-bold tracking-tighter">
+              {projectCount}
+            </div>
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-primary-foreground/60">
+              Managed Repositories
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="mt-6 space-y-5">
+        <div className="flex items-center justify-between border-b border-border pb-4">
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
               Inventory
             </p>
-            <h2 className="text-xl font-bold uppercase tracking-tight">Managed Repositories</h2>
+            <h2 className="text-xl font-bold uppercase tracking-tight">
+              Managed Repositories
+            </h2>
           </div>
-          <Button asChild variant="outline" className="border-border text-foreground font-bold uppercase text-[10px] tracking-widest h-10 rounded-none px-4">
+          <Button
+            asChild
+            variant="outline"
+            className="h-10 rounded-none border-border px-4 text-[10px] font-bold uppercase tracking-widest"
+          >
             <Link href="/projects/new">
               <Plus className="mr-2 h-3.5 w-3.5" />
               New Import
@@ -152,13 +177,34 @@ export default async function DashboardPage() {
         <div className="grid gap-4">
           {projects.length === 0 ? (
             <div className="flex flex-col items-center justify-center border border-dashed border-border bg-muted/10 py-12 text-center">
-              <Layers className="h-8 w-8 text-muted-foreground/30 mb-4" />
+              <Layers className="mb-4 h-8 w-8 text-muted-foreground/30" />
               <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                No Repositories Indexed
+                {githubStatus.connected
+                  ? "No Repositories Indexed Yet"
+                  : "No Repositories Indexed"}
               </p>
-              <p className="mt-2 text-[10px] text-muted-foreground uppercase max-w-[200px]">
-                Connect GitHub and initialize your first project import.
+              <p className="mt-2 max-w-[200px] text-[10px] uppercase text-muted-foreground">
+                {githubStatus.connected
+                  ? "Your GitHub identity is ready. Initialize your first project import."
+                  : "Connect GitHub and initialize your first project import."}
               </p>
+              <div className="mt-6">
+                <Button
+                  asChild
+                  variant={githubStatus.connected ? "default" : "outline"}
+                  className="h-10 rounded-none px-6 text-[10px] font-bold uppercase tracking-widest"
+                >
+                  <Link
+                    href={
+                      githubStatus.connected
+                        ? "/projects/new"
+                        : "/onboarding/github"
+                    }
+                  >
+                    {githubStatus.connected ? "Start Import" : "Connect GitHub"}
+                  </Link>
+                </Button>
+              </div>
             </div>
           ) : (
             projects.map((project) => (
@@ -171,15 +217,19 @@ export default async function DashboardPage() {
                     <Github className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold tracking-tight uppercase">
+                    <h3 className="text-sm font-bold uppercase tracking-tight">
                       {project.repoOwner}/{project.repoName}
                     </h3>
-                    <p className="text-[10px] text-muted-foreground uppercase mt-0.5">
+                    <p className="mt-0.5 text-[10px] uppercase text-muted-foreground">
                       Indexed on {project.createdAt.toLocaleDateString()}
                     </p>
                   </div>
                 </div>
-                <Button asChild variant="ghost" className="h-10 w-10 p-0 rounded-none border border-transparent hover:border-border hover:bg-background">
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="h-10 w-10 rounded-none border border-transparent p-0 hover:border-border hover:bg-background"
+                >
                   <Link href={`/projects/${project.id}`}>
                     <ArrowUpRight className="h-4 w-4" />
                     <span className="sr-only">Open Project</span>
@@ -189,7 +239,7 @@ export default async function DashboardPage() {
             ))
           )}
         </div>
-      </div>
+      </section>
     </AppShell>
   );
 }
