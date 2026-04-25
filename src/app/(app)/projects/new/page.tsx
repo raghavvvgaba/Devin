@@ -1,8 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { Github, RefreshCw, ShieldCheck, ShieldAlert, Plus, ExternalLink, Database } from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
+import { getAuth } from "~/server/auth/session";
 import { db } from "~/server/db";
 import { env } from "~/env";
 import { requireGithubConnection } from "~/server/github/guard";
@@ -41,7 +41,7 @@ type NewProjectPageProps = {
 export default async function NewProjectPage({
   searchParams,
 }: NewProjectPageProps) {
-  const { userId } = await auth();
+  const { userId } = await getAuth();
   await requireGithubConnection(userId!);
 
   const params = await searchParams;

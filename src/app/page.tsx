@@ -2,8 +2,6 @@ import { SignedIn, SignedOut } from "@clerk/nextjs";
 import Link from "next/link";
 import { Terminal, ArrowRight, Github, LayoutDashboard } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 const workflow = [
   "Sign in with Clerk",
   "Connect GitHub",
@@ -45,7 +43,6 @@ export default function HomePage() {
               <Link
                 className="flex items-center gap-2 bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary-foreground transition hover:bg-primary/90"
                 href="/dashboard"
-                prefetch={false}
               >
                 <LayoutDashboard className="h-4 w-4" />
                 Dashboard
@@ -80,7 +77,6 @@ export default function HomePage() {
               <Link
                 className="group flex items-center gap-2 bg-primary px-6 py-4 text-xs font-bold uppercase tracking-widest text-primary-foreground transition hover:bg-primary/90"
                 href="/dashboard"
-                prefetch={false}
               >
                 Initialize App
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { ensureUserRecord } from "~/server/auth/sync-user";
 import { disconnectGithub } from "~/server/github/connection";
 
 export async function POST(request: Request) {
@@ -10,6 +11,7 @@ export async function POST(request: Request) {
     return redirectToSignIn({ returnBackUrl: "/onboarding/github" });
   }
 
+  await ensureUserRecord(userId);
   await disconnectGithub(userId);
 
   const requestUrl = new URL(request.url);

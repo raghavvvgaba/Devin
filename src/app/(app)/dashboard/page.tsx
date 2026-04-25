@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -10,11 +9,12 @@ import {
 import { AppShell } from "~/components/app-shell";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { getAuth } from "~/server/auth/session";
 import { db } from "~/server/db";
 import { getGithubConnectionStatus } from "~/server/github/connection";
 
 export default async function DashboardPage() {
-  const { userId } = await auth();
+  const { userId } = await getAuth();
 
   const [projects, githubStatus] = await Promise.all([
     db.project.findMany({

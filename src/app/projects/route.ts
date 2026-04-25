@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { Prisma } from "../../../generated/prisma";
 import { NextResponse } from "next/server";
 
+import { ensureUserRecord } from "~/server/auth/sync-user";
 import { db } from "~/server/db";
 import { getGithubConnectionStatus } from "~/server/github/connection";
 import { readGithubImportSession } from "~/server/github/import-session";
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await ensureUserRecord(userId);
     const project = await db.project.create({
       data: {
         repoName: matchedRepo.name,

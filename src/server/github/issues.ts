@@ -1,3 +1,6 @@
+import { unstable_cache } from "next/cache";
+
+import { getIssueTag, getRepoIssuesTag } from "~/server/github/cache";
 import { GITHUB_API_VERSION } from "~/server/github/constants";
 import { getRepoInstallationAccessToken } from "~/server/github/app-auth";
 
@@ -56,65 +59,73 @@ export async function fetchProjectOpenIssues(
   repoOwner: string,
   repoName: string,
 ): Promise<ProjectIssuesResult> {
-  const installationToken = await getRepoInstallationAccessToken(
-    repoOwner,
-    repoName,
-  );
+  return unstable_cache(
+    async () => {
+      const installationToken = await getRepoInstallationAccessToken(
+        repoOwner,
+        repoName,
+      );
 
-  if (!installationToken) {
-    return {
-      issues: [],
-      status: "missing_access",
-    };
-  }
+      if (!installationToken) {
+        return {
+          issues: [],
+          status: "missing_access",
+        } satisfies ProjectIssuesResult;
+      }
 
-  const response = await fetch(
-    `https://api.github.com/repos/${repoOwner}/${repoName}/issues?state=open&per_page=10`,
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${installationToken}`,
-        "User-Agent": "devin-app",
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      },
-      cache: "no-store",
+      const response = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/issues?state=open&per_page=10`,
+        {
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: `Bearer ${installationToken}`,
+            "User-Agent": "devin-app",
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
+          },
+        },
+      );
+
+      if (response.status === 404 || response.status === 403) {
+        return {
+          issues: [],
+          status: "missing_access",
+        } satisfies ProjectIssuesResult;
+      }
+
+      if (!response.ok) {
+        return {
+          issues: [],
+          status: "error",
+        } satisfies ProjectIssuesResult;
+      }
+
+      const issues = ((await response.json()) as GithubIssueResponse[])
+        .filter((issue) => !issue.pull_request)
+        .slice(0, 10)
+        .map<ProjectIssue>((issue) => ({
+          author: issue.user.login,
+          body: issue.body,
+          comments: issue.comments,
+          createdAt: issue.created_at,
+          id: issue.id,
+          number: issue.number,
+          state: issue.state,
+          title: issue.title,
+          updatedAt: issue.updated_at,
+          url: issue.html_url,
+        }));
+
+      return {
+        issues,
+        status: "ok",
+      } satisfies ProjectIssuesResult;
     },
-  );
-
-  if (response.status === 404 || response.status === 403) {
-    return {
-      issues: [],
-      status: "missing_access",
-    };
-  }
-
-  if (!response.ok) {
-    return {
-      issues: [],
-      status: "error",
-    };
-  }
-
-  const issues = ((await response.json()) as GithubIssueResponse[])
-    .filter((issue) => !issue.pull_request)
-    .slice(0, 10)
-    .map<ProjectIssue>((issue) => ({
-      author: issue.user.login,
-      body: issue.body,
-      comments: issue.comments,
-      createdAt: issue.created_at,
-      id: issue.id,
-      number: issue.number,
-      state: issue.state,
-      title: issue.title,
-      updatedAt: issue.updated_at,
-      url: issue.html_url,
-    }));
-
-  return {
-    issues,
-    status: "ok",
-  };
+    ["github-open-issues", repoOwner.toLowerCase(), repoName.toLowerCase()],
+    {
+      revalidate: 60,
+      tags: [getRepoIssuesTag(repoOwner, repoName)],
+    },
+  )();
 }
 
 export async function fetchProjectIssue(
@@ -122,74 +133,87 @@ export async function fetchProjectIssue(
   repoName: string,
   issueNumber: number,
 ): Promise<ProjectIssueResult> {
-  const installationToken = await getRepoInstallationAccessToken(
-    repoOwner,
-    repoName,
-  );
+  return unstable_cache(
+    async () => {
+      const installationToken = await getRepoInstallationAccessToken(
+        repoOwner,
+        repoName,
+      );
 
-  if (!installationToken) {
-    return {
-      issue: null,
-      status: "missing_access",
-    };
-  }
+      if (!installationToken) {
+        return {
+          issue: null,
+          status: "missing_access",
+        } satisfies ProjectIssueResult;
+      }
 
-  const response = await fetch(
-    `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${issueNumber}`,
+      const response = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${issueNumber}`,
+        {
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: `Bearer ${installationToken}`,
+            "User-Agent": "devin-app",
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
+          },
+        },
+      );
+
+      if (response.status === 404) {
+        return {
+          issue: null,
+          status: "not_found",
+        } satisfies ProjectIssueResult;
+      }
+
+      if (response.status === 403) {
+        return {
+          issue: null,
+          status: "missing_access",
+        } satisfies ProjectIssueResult;
+      }
+
+      if (!response.ok) {
+        return {
+          issue: null,
+          status: "error",
+        } satisfies ProjectIssueResult;
+      }
+
+      const issue = (await response.json()) as GithubIssueResponse;
+
+      if (issue.pull_request) {
+        return {
+          issue: null,
+          status: "not_found",
+        } satisfies ProjectIssueResult;
+      }
+
+      return {
+        issue: {
+          author: issue.user.login,
+          body: issue.body,
+          comments: issue.comments,
+          createdAt: issue.created_at,
+          id: issue.id,
+          number: issue.number,
+          state: issue.state,
+          title: issue.title,
+          updatedAt: issue.updated_at,
+          url: issue.html_url,
+        },
+        status: "ok",
+      } satisfies ProjectIssueResult;
+    },
+    [
+      "github-issue",
+      repoOwner.toLowerCase(),
+      repoName.toLowerCase(),
+      String(issueNumber),
+    ],
     {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${installationToken}`,
-        "User-Agent": "devin-app",
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      },
-      cache: "no-store",
+      revalidate: 60,
+      tags: [getIssueTag(repoOwner, repoName, issueNumber)],
     },
-  );
-
-  if (response.status === 404) {
-    return {
-      issue: null,
-      status: "not_found",
-    };
-  }
-
-  if (response.status === 403) {
-    return {
-      issue: null,
-      status: "missing_access",
-    };
-  }
-
-  if (!response.ok) {
-    return {
-      issue: null,
-      status: "error",
-    };
-  }
-
-  const issue = (await response.json()) as GithubIssueResponse;
-
-  if (issue.pull_request) {
-    return {
-      issue: null,
-      status: "not_found",
-    };
-  }
-
-  return {
-    issue: {
-      author: issue.user.login,
-      body: issue.body,
-      comments: issue.comments,
-      createdAt: issue.created_at,
-      id: issue.id,
-      number: issue.number,
-      state: issue.state,
-      title: issue.title,
-      updatedAt: issue.updated_at,
-      url: issue.html_url,
-    },
-    status: "ok",
-  };
+  )();
 }

@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 import { commitPreparedEdit } from "~/server/github/commits";
+import { revalidateProjectGitHubReads } from "~/server/github/cache";
 import { clearPendingProjectEdit, readPendingProjectEdit } from "~/server/github/pending-edit-session";
 import { writePostCommitResult } from "~/server/github/post-commit-session";
 import { clearPullRequestResult } from "~/server/github/pull-request-session";
@@ -103,6 +104,11 @@ export async function POST(request: Request, context: CommitRouteContext) {
     projectId: project.id,
   });
   await clearPendingProjectEdit(project.id, issueNumber);
+  revalidateProjectGitHubReads({
+    issueNumber,
+    repoName: project.repoName,
+    repoOwner: project.repoOwner,
+  });
 
   return redirectToIssueWithStatus(
     request,

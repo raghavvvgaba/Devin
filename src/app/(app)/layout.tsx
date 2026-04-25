@@ -1,19 +1,15 @@
-import { auth } from "@clerk/nextjs/server";
-
-import { syncCurrentUser } from "~/server/auth/sync-user";
+import { getAuth } from "~/server/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProtectedAppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { userId, redirectToSignIn } = await auth();
+  const { userId, redirectToSignIn } = await getAuth();
 
   if (!userId) {
     return redirectToSignIn();
   }
-
-  await syncCurrentUser();
 
   return children;
 }

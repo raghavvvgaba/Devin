@@ -1,6 +1,12 @@
 import { createSign } from "node:crypto";
 
+import { unstable_cache } from "next/cache";
+
 import { env } from "~/env";
+import {
+  getInstallationTokenTag,
+  getRepoInstallationTag,
+} from "~/server/github/cache";
 import { GITHUB_API_VERSION } from "~/server/github/constants";
 
 type GithubInstallationResponse = {
@@ -50,41 +56,58 @@ async function githubAppFetch<T>(path: string, init?: RequestInit) {
       "X-GitHub-Api-Version": GITHUB_API_VERSION,
       ...(init?.headers ?? {}),
     },
-    cache: "no-store",
   });
 
   return response;
 }
 
 export async function getRepoInstallationId(repoOwner: string, repoName: string) {
-  const response = await githubAppFetch<GithubInstallationResponse>(
-    `/repos/${repoOwner}/${repoName}/installation`,
-  );
+  return unstable_cache(
+    async () => {
+      const response = await githubAppFetch<GithubInstallationResponse>(
+        `/repos/${repoOwner}/${repoName}/installation`,
+      );
 
-  if (response.status === 404 || response.status === 403) {
-    return null;
-  }
+      if (response.status === 404 || response.status === 403) {
+        return null;
+      }
 
-  if (!response.ok) {
-    throw new Error("github_installation_lookup_failed");
-  }
+      if (!response.ok) {
+        throw new Error("github_installation_lookup_failed");
+      }
 
-  const installation = (await response.json()) as GithubInstallationResponse;
-  return installation.id;
+      const installation = (await response.json()) as GithubInstallationResponse;
+      return installation.id;
+    },
+    ["github-installation-id", repoOwner.toLowerCase(), repoName.toLowerCase()],
+    {
+      revalidate: 60 * 10,
+      tags: [getRepoInstallationTag(repoOwner, repoName)],
+    },
+  )();
 }
 
 export async function createInstallationAccessToken(installationId: number) {
-  const response = await githubAppFetch<GithubInstallationTokenResponse>(
-    `/app/installations/${installationId}/access_tokens`,
-    { method: "POST" },
-  );
+  return unstable_cache(
+    async () => {
+      const response = await githubAppFetch<GithubInstallationTokenResponse>(
+        `/app/installations/${installationId}/access_tokens`,
+        { method: "POST" },
+      );
 
-  if (!response.ok) {
-    throw new Error("github_installation_token_failed");
-  }
+      if (!response.ok) {
+        throw new Error("github_installation_token_failed");
+      }
 
-  const data = (await response.json()) as GithubInstallationTokenResponse;
-  return data.token;
+      const data = (await response.json()) as GithubInstallationTokenResponse;
+      return data.token;
+    },
+    ["github-installation-token", String(installationId)],
+    {
+      revalidate: 60 * 50,
+      tags: [getInstallationTokenTag(installationId)],
+    },
+  )();
 }
 
 export async function getRepoInstallationAccessToken(

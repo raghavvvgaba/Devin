@@ -1,9 +1,9 @@
-import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { Github, CheckCircle2, Circle, ArrowRight, ExternalLink, Unlink } from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
 import { env } from "~/env";
+import { getAuth } from "~/server/auth/session";
 import { getGithubConnectionStatus } from "~/server/github/connection";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -43,7 +43,7 @@ type GithubOnboardingPageProps = {
 export default async function GithubOnboardingPage({
   searchParams,
 }: GithubOnboardingPageProps) {
-  const { userId } = await auth();
+  const { userId } = await getAuth();
   const params = await searchParams;
   const status = await getGithubConnectionStatus(userId!);
 

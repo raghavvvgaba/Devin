@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { revalidateProjectGitHubReads } from "~/server/github/cache";
 import { createPullRequestForIssue } from "~/server/github/pull-requests";
 import { readPostCommitResult } from "~/server/github/post-commit-session";
 import { clearPullRequestResult, writePullRequestResult } from "~/server/github/pull-request-session";
@@ -102,6 +103,11 @@ export async function POST(request: Request, context: PullRequestRouteContext) {
     prNumber,
     projectId: project.id,
     prUrl,
+  });
+  revalidateProjectGitHubReads({
+    issueNumber,
+    repoName: project.repoName,
+    repoOwner: project.repoOwner,
   });
 
   return redirectToIssueWithStatus(

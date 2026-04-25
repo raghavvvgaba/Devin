@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { revalidateProjectGitHubReads } from "~/server/github/cache";
 import { prepareSingleFileAiEdit } from "~/server/github/contents";
 import { clearPostCommitResult } from "~/server/github/post-commit-session";
 import { writePendingProjectEdit } from "~/server/github/pending-edit-session";
@@ -277,6 +278,11 @@ async function handlePrepareEdit(request: Request, context: EditRouteContext) {
     summary: preparedEdit.summary,
     updatedContent: preparedEdit.updatedContent,
     userInstruction: instruction,
+  });
+  revalidateProjectGitHubReads({
+    issueNumber,
+    repoName: project.repoName,
+    repoOwner: project.repoOwner,
   });
 
   if (requestExpectsJson) {

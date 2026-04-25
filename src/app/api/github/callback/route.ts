@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { ensureUserRecord } from "~/server/auth/sync-user";
 import { markGithubConnected } from "~/server/github/connection";
 import { writeGithubImportSession } from "~/server/github/import-session";
 import {
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
       );
     }
 
+    await ensureUserRecord(userId);
     const githubUser = await completeGithubConnect(code, state);
 
     await markGithubConnected({

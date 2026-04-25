@@ -1,3 +1,9 @@
+import { unstable_cache } from "next/cache";
+
+import {
+  getImportRepositoriesTag,
+  hashGithubImportToken,
+} from "~/server/github/cache";
 import { GITHUB_API_VERSION } from "~/server/github/constants";
 
 type GithubRepo = {
@@ -39,7 +45,6 @@ async function githubFetch<T>(path: string, accessToken: string) {
       "User-Agent": "devin-app",
       "X-GitHub-Api-Version": GITHUB_API_VERSION,
     },
-    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -49,7 +54,7 @@ async function githubFetch<T>(path: string, accessToken: string) {
   return (await response.json()) as T;
 }
 
-export async function fetchImportRepositories(accessToken: string) {
+async function fetchImportRepositoriesUncached(accessToken: string) {
   const visibleRepos = await githubFetch<GithubRepo[]>(
     "/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member",
     accessToken,
@@ -93,4 +98,17 @@ export async function fetchImportRepositories(accessToken: string) {
         : "needs_access",
     }))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+export async function fetchImportRepositories(accessToken: string) {
+  const tokenHash = hashGithubImportToken(accessToken);
+
+  return unstable_cache(
+    async () => fetchImportRepositoriesUncached(accessToken),
+    ["github-import-repositories", tokenHash],
+    {
+      revalidate: 60,
+      tags: [getImportRepositoriesTag(tokenHash)],
+    },
+  )();
 }
