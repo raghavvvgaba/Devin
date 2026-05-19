@@ -7,6 +7,7 @@ import { AppShell } from "~/components/app-shell";
 import { IssueChatWorkspace } from "~/components/issue-chat-workspace";
 import { IssueChangePreviewModal } from "~/components/issue-change-preview-modal";
 import { IssueDetailsModal } from "~/components/issue-details-modal";
+import { IssueSandboxStatusPanel } from "~/components/issue-sandbox-status-panel";
 import { type AIChatMessage } from "~/components/ui/ai-chat";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -299,6 +300,7 @@ async function IssueWorkspaceSection({
   const commitAction = `/projects/${project.id}/issues/${issueNumber}/commit`;
   const cancelAction = `/projects/${project.id}/issues/${issueNumber}/edit/cancel`;
   const pullRequestAction = `/projects/${project.id}/issues/${issueNumber}/pull-request`;
+  const sandboxBaseAction = `/projects/${project.id}/issues/${issueNumber}/sandbox`;
 
   return (
     <>
@@ -329,6 +331,16 @@ async function IssueWorkspaceSection({
           />
         </div>
       </div>
+
+      <IssueSandboxStatusPanel
+        heartbeatAction={`${sandboxBaseAction}/heartbeat`}
+        issueNumber={issueNumber}
+        projectId={project.id}
+        restartPreviewAction={`${sandboxBaseAction}/restart-preview`}
+        sessionAction={`${sandboxBaseAction}/session`}
+        startAction={`${sandboxBaseAction}/start`}
+        stopAction={`${sandboxBaseAction}/stop`}
+      />
 
       <IssueChatWorkspace
         accessBlocked={accessBlocked}

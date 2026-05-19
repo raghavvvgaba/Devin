@@ -1,0 +1,49 @@
+import {
+  getOwnedIssueProject,
+  readJsonObject,
+  readStringField,
+  sandboxError,
+  sandboxJson,
+  type IssueSandboxRouteContext,
+} from "~/server/sandbox/route-helpers";
+import { canAccessIssueSandbox } from "~/server/sandbox/ownership";
+import { sandboxProvider } from "~/server/sandbox/provider";
+
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
+export async function POST(
+  request: Request,
+  context: IssueSandboxRouteContext,
+) {
+  const access = await getOwnedIssueProject(request, context);
+
+  if ("response" in access) {
+    return access.response;
+  }
+
+  const body = await readJsonObject(request);
+  const sessionId = readStringField(body, "sessionId");
+
+  if (!sessionId) {
+    return sandboxError("missing_session_id");
+  }
+
+  if (
+    !canAccessIssueSandbox(sessionId, {
+      issueNumber: access.issueNumber,
+      projectId: access.project.id,
+      userId: access.userId,
+    })
+  ) {
+    return sandboxError("session_not_found", 404);
+  }
+
+  const session = sandboxProvider.heartbeat(sessionId);
+
+  if (!session) {
+    return sandboxError("session_not_found", 404);
+  }
+
+  return sandboxJson({ ok: true as const, session });
+}
