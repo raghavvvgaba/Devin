@@ -138,9 +138,9 @@ export default async function GithubOnboardingPage({
               <div className="flex flex-wrap gap-4">
                 {!status.connected ? (
                   <Button asChild className="bg-primary text-primary-foreground font-bold uppercase text-[10px] tracking-widest h-12 rounded-none px-8">
-                    <Link href="/api/github/connect">
+                    <a href="/api/github/connect">
                       Initialize Connection
-                    </Link>
+                    </a>
                   </Button>
                 ) : (
                   <>

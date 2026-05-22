@@ -25,10 +25,15 @@ export type StopSandboxSessionInput = {
   sessionId: string;
 };
 
+export type StartSandboxSessionInput = {
+  repoName: string;
+  repoOwner: string;
+};
+
 export type SandboxProvider = {
   get: (sessionId: string) => SandboxSession | null;
   heartbeat: (sessionId: string) => SandboxSession | null;
   restartPreview: (sessionId: string) => Promise<SandboxSession>;
-  start: () => Promise<SandboxSession>;
+  start: (input: StartSandboxSessionInput) => Promise<SandboxSession>;
   stop: (input: StopSandboxSessionInput) => Promise<SandboxSession>;
 };

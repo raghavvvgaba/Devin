@@ -67,7 +67,12 @@ export function AppShell({
                 <Separator className="bg-border/50" />
               </>
             ) : null}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col",
+                fullHeight && "overflow-hidden",
+              )}
+            >
               {children}
             </div>
           </div>

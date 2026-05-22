@@ -14,6 +14,30 @@ function toErrorRedirect(url: URL, error: string) {
   return NextResponse.redirect(redirectUrl, { status: 303 });
 }
 
+function wantsJson(request: Request) {
+  return request.headers.get("accept")?.includes("application/json") ?? false;
+}
+
+function toImportError(request: Request, error: string, status = 400) {
+  if (wantsJson(request)) {
+    return NextResponse.json({ error }, { status });
+  }
+
+  return toErrorRedirect(new URL(request.url), error);
+}
+
+function toImportSuccess(request: Request, projectId: string) {
+  const projectUrl = `/projects/${projectId}`;
+
+  if (wantsJson(request)) {
+    return NextResponse.json({ projectUrl });
+  }
+
+  return NextResponse.redirect(new URL(projectUrl, request.url), {
+    status: 303,
+  });
+}
+
 export async function GET() {
   const { userId, redirectToSignIn } = await auth();
 
@@ -39,7 +63,7 @@ export async function POST(request: Request) {
   const githubStatus = await getGithubConnectionStatus(userId);
 
   if (!githubStatus.connected) {
-    return toErrorRedirect(new URL(request.url), "github_required");
+    return toImportError(request, "github_required", 403);
   }
 
   const formData = await request.formData();
@@ -47,13 +71,13 @@ export async function POST(request: Request) {
   const repoName = formData.get("repoName");
 
   if (typeof repoOwner !== "string" || typeof repoName !== "string") {
-    return toErrorRedirect(new URL(request.url), "missing_repo_selection");
+    return toImportError(request, "missing_repo_selection");
   }
 
   const importSession = await readGithubImportSession();
 
   if (!importSession) {
-    return toErrorRedirect(new URL(request.url), "refresh_import_session");
+    return toImportError(request, "refresh_import_session", 401);
   }
 
   const repos = await fetchImportRepositories(importSession.accessToken);
@@ -64,11 +88,11 @@ export async function POST(request: Request) {
   );
 
   if (!matchedRepo) {
-    return toErrorRedirect(new URL(request.url), "repo_not_in_session");
+    return toImportError(request, "repo_not_in_session", 404);
   }
 
   if (matchedRepo.status !== "ready") {
-    return toErrorRedirect(new URL(request.url), "repo_needs_access");
+    return toImportError(request, "repo_needs_access", 403);
   }
 
   try {
@@ -81,9 +105,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.redirect(new URL(`/projects/${project.id}`, request.url), {
-      status: 303,
-    });
+    return toImportSuccess(request, project.id);
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -98,9 +120,7 @@ export async function POST(request: Request) {
       });
 
       if (existingProject) {
-        const redirectUrl = new URL(`/projects/${existingProject.id}`, request.url);
-        redirectUrl.searchParams.set("success", "already_imported");
-        return NextResponse.redirect(redirectUrl, { status: 303 });
+        return toImportSuccess(request, existingProject.id);
       }
     }
 

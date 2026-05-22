@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
+import { IssueSandboxStatusPanel } from "~/components/issue-sandbox-status-panel";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -111,6 +112,7 @@ async function ProjectIssuesSection({
   repoOwner: string;
 }) {
   const issuesResult = await fetchProjectOpenIssues(repoOwner, repoName);
+  const sandboxBaseAction = `/projects/${projectId}/sandbox`;
 
   return (
     <section className="space-y-6">
@@ -174,6 +176,16 @@ async function ProjectIssuesSection({
           </p>
         </div>
       ) : null}
+
+      <IssueSandboxStatusPanel
+        heartbeatAction={`${sandboxBaseAction}/heartbeat`}
+        issueNumber={0}
+        projectId={projectId}
+        restartPreviewAction={`${sandboxBaseAction}/restart-preview`}
+        sessionAction={`${sandboxBaseAction}/session`}
+        startAction={`${sandboxBaseAction}/start`}
+        stopAction={`${sandboxBaseAction}/stop`}
+      />
 
       {issuesResult.status === "ok" && issuesResult.issues.length > 0 ? (
         <div className="grid gap-px border border-border bg-border">

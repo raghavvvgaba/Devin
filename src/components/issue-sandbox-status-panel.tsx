@@ -95,10 +95,26 @@ function getErrorMessage(error: unknown) {
 }
 
 async function readSandboxResponse(response: Response) {
-  const result = (await response.json().catch(() => null)) as SandboxResponse | null;
+  const bodyText = await response.text();
+  let result: SandboxResponse | null = null;
+
+  try {
+    result = bodyText ? (JSON.parse(bodyText) as SandboxResponse) : null;
+  } catch {
+    const contentType = response.headers.get("content-type") ?? "unknown";
+    const preview = bodyText.trim().replace(/\s+/g, " ").slice(0, 240);
+
+    throw new Error(
+      `Sandbox returned ${response.status} ${response.statusText || "response"} instead of JSON (${contentType}). ${
+        preview ? `Response: ${preview}` : "The response body was empty."
+      }`,
+    );
+  }
 
   if (!result) {
-    throw new Error("Sandbox returned an unreadable response.");
+    throw new Error(
+      `Sandbox returned ${response.status} ${response.statusText || "response"} with an empty response body.`,
+    );
   }
 
   if (!response.ok || !result.ok) {
@@ -133,10 +149,11 @@ export function IssueSandboxStatusPanel({
     session?.status === "running" && session.previewState === "ready";
   const status = session?.status ?? "stopped";
   const statusMessage =
-    session?.startupMessage ??
-    session?.previewMessage ??
-    session?.message ??
-    "Start a preview environment for this issue.";
+    session?.status === "stopped" || session?.status === "error"
+      ? session.message ?? session.startupMessage
+      : session?.startupMessage ?? session?.previewMessage ?? session?.message;
+  const displayMessage =
+    statusMessage ?? "Start a preview environment for this issue.";
 
   const saveSession = useCallback(
     (nextSession: SandboxSession) => {
@@ -331,10 +348,10 @@ export function IssueSandboxStatusPanel({
               {statusCopy[status]}
             </span>
           </div>
-          <p className="max-w-3xl text-sm leading-6 text-white/68">
-            {statusMessage}
+          <p className="max-w-3xl whitespace-pre-line text-sm leading-6 text-white/68">
+            {displayMessage}
           </p>
-          {session?.previewUrl ? (
+          {session?.previewUrl && canOpenPreview ? (
             <p className="truncate font-mono text-xs text-white/38">
               {session.previewUrl}
             </p>

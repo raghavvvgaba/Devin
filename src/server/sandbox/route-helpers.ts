@@ -9,6 +9,10 @@ export type IssueSandboxRouteContext = {
   params: Promise<{ id: string; issueNumber: string }>;
 };
 
+export type ProjectSandboxRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
 export function sandboxJson<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, init);
 }
@@ -41,6 +45,34 @@ export async function getOwnedIssueProject(
 
   return {
     issueNumber,
+    project,
+    request,
+    userId,
+  };
+}
+
+export async function getOwnedSandboxProject(
+  request: Request,
+  context: ProjectSandboxRouteContext,
+) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return {
+      response: sandboxError("unauthenticated", 401),
+    };
+  }
+
+  const { id } = await context.params;
+  const project = await getOwnedProject(id, userId);
+
+  if (!project) {
+    return {
+      response: sandboxError("project_not_found", 404),
+    };
+  }
+
+  return {
     project,
     request,
     userId,

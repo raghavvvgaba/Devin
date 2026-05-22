@@ -1,10 +1,10 @@
 import {
-  getOwnedIssueProject,
+  getOwnedSandboxProject,
   sandboxError,
   sandboxJson,
-  type IssueSandboxRouteContext,
+  type ProjectSandboxRouteContext,
 } from "~/server/sandbox/route-helpers";
-import { recordIssueSandboxOwner } from "~/server/sandbox/ownership";
+import { recordProjectSandboxOwner } from "~/server/sandbox/ownership";
 import { sandboxProvider } from "~/server/sandbox/provider";
 
 export const runtime = "nodejs";
@@ -12,9 +12,9 @@ export const maxDuration = 300;
 
 export async function POST(
   request: Request,
-  context: IssueSandboxRouteContext,
+  context: ProjectSandboxRouteContext,
 ) {
-  const access = await getOwnedIssueProject(request, context);
+  const access = await getOwnedSandboxProject(request, context);
 
   if ("response" in access) {
     return access.response;
@@ -25,8 +25,7 @@ export async function POST(
       repoName: access.project.repoName,
       repoOwner: access.project.repoOwner,
     });
-    recordIssueSandboxOwner(session.sessionId, {
-      issueNumber: access.issueNumber,
+    recordProjectSandboxOwner(session.sessionId, {
       projectId: access.project.id,
       userId: access.userId,
     });

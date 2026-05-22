@@ -3,11 +3,13 @@ import "server-only";
 import type { CommandHandle, Sandbox as E2BSandbox, SandboxInfo } from "e2b";
 
 import { env } from "~/env";
+import { getRepoInstallationAccessToken } from "~/server/github/app-auth";
 import type {
   PreviewState,
   SandboxProvider,
   SandboxSession as PublicSandboxSession,
   SandboxStatus,
+  StartSandboxSessionInput,
   StartupStage,
   StopSandboxSessionInput,
 } from "~/server/sandbox/types";
@@ -30,6 +32,10 @@ type E2BSandboxSession = {
   previewObservedVersion?: string;
   startupStage?: StartupStage;
   startupMessage?: string;
+  previewCommand?: string;
+  previewCwd?: string;
+  repoKind?: SupportedRepoKind;
+  sensitiveLogValues?: string[];
   sandbox?: E2BSandbox;
   previewProcessId?: number;
   restartingPreview?: Promise<void>;
@@ -38,6 +44,25 @@ type E2BSandboxSession = {
   lastHeartbeatAt?: string;
   abandonedAt?: string;
   abandonmentCleanupTask?: ReturnType<typeof setTimeout>;
+};
+
+type PackageManager = "bun" | "npm" | "pnpm" | "yarn";
+
+type SupportedRepoKind = "static" | "vite-react";
+
+type RepoPreviewConfig = {
+  installCommand?: string;
+  kind: SupportedRepoKind;
+  prepareCommand?: string;
+  previewCommand: string;
+  previewCwd: string;
+};
+
+type RunStepInput = {
+  command: string;
+  cwd?: string;
+  displayCommand?: string;
+  timeoutMs: number;
 };
 
 export type SandboxListItem = {
@@ -70,11 +95,10 @@ class SessionCancelledError extends Error {
   }
 }
 
-const PROJECT_DIR = "/home/user/devin-e2b-preview";
+const PROJECT_DIR = "/home/user/repo";
 const PREVIEW_PORT = 5173;
 const PREVIEW_VERSION_PATH = "__preview_version.txt";
 const SANDBOX_TIMEOUT_MS = 30 * 60_000;
-const CREATE_VITE_VERSION = "5.5.5";
 const SANDBOX_METADATA_APP = "devin-e2b-preview";
 const STARTUP_PREVIEW_TIMEOUT_MS = 75_000;
 const RESTART_PREVIEW_TIMEOUT_MS = 15_000;
@@ -83,6 +107,16 @@ const EDIT_PREVIEW_TIMEOUT_MS = 8_000;
 const PREVIEW_RETRY_DELAY_MS = 1000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const ABANDONMENT_GRACE_MS = 10 * 60_000;
+const UNSUPPORTED_REPO_MESSAGE =
+  "This repository type is not supported yet. Supported: static HTML/CSS/JS and Vite React.";
+const UNSUPPORTED_PACKAGE_MANAGER_MESSAGE =
+  "This package manager is not supported yet. Supported: bun, npm, pnpm, and yarn.";
+const UNSUPPORTED_FULL_STACK_REPO_MESSAGE =
+  "This looks like a frontend/backend repository. Multi-process full-stack sandboxes are not supported yet. Supported right now: root static HTML/CSS/JS and root Vite React.";
+const UNSUPPORTED_NESTED_APP_REPO_MESSAGE =
+  "This repository appears to keep its app in a nested folder. Nested apps are not supported yet. Supported right now: root static HTML/CSS/JS and root Vite React.";
+const UNSUPPORTED_WORKSPACE_REPO_MESSAGE =
+  "This looks like a workspace or monorepo. Workspace/monorepo sandboxes are not supported yet. Supported right now: root static HTML/CSS/JS and root Vite React.";
 
 declare global {
   var __e2bSandboxSessions: Map<string, E2BSandboxSession> | undefined;
@@ -101,8 +135,17 @@ async function getSandboxCtor() {
   return sandboxCtorPromise;
 }
 
+function redactSessionText(session: E2BSandboxSession, text: string) {
+  let redacted = text;
+  for (const sensitiveValue of session.sensitiveLogValues ?? []) {
+    if (!sensitiveValue) continue;
+    redacted = redacted.split(sensitiveValue).join("[redacted]");
+  }
+  return redacted;
+}
+
 function appendLog(session: E2BSandboxSession, line: string) {
-  session.logs.push(line);
+  session.logs.push(redactSessionText(session, line));
   if (session.logs.length > 700) {
     session.logs.splice(0, session.logs.length - 700);
   }
@@ -150,6 +193,10 @@ function describeError(error: unknown) {
 
   const tail = detail.length > 1400 ? detail.slice(-1400) : detail;
   return `${error.message}\n${tail}`;
+}
+
+function describeSessionError(session: E2BSandboxSession, error: unknown) {
+  return redactSessionText(session, describeError(error));
 }
 
 function isSandboxNotFoundError(error: unknown) {
@@ -236,8 +283,8 @@ async function abandonSession(session: E2BSandboxSession) {
     session.status = "error";
     session.previewState = "offline";
     session.previewMessage = "Preview closed after 10 minutes without activity.";
-    session.message = `This preview was closed after 10 minutes without activity.\n${describeError(error)}`;
-    appendLog(session, `Automatic inactivity cleanup failed: ${describeError(error)}\n`);
+    session.message = `This preview was closed after 10 minutes without activity.\n${describeSessionError(session, error)}`;
+    appendLog(session, `Automatic inactivity cleanup failed: ${describeSessionError(session, error)}\n`);
   }
 }
 
@@ -322,13 +369,257 @@ function toSandboxListItem(info: SandboxInfo): SandboxListItem {
   };
 }
 
-async function runStep(session: E2BSandboxSession, cmd: string, timeoutMs: number, cwd = PROJECT_DIR) {
-  appendLog(session, `\n$ ${cmd}\n`);
-  await session.sandbox?.commands.run(cmd, {
+async function runStep(session: E2BSandboxSession, input: RunStepInput) {
+  const cwd = input.cwd ?? PROJECT_DIR;
+  appendLog(session, `\n$ ${input.displayCommand ?? input.command}\n`);
+  await session.sandbox?.commands.run(input.command, {
     cwd,
-    timeoutMs,
+    timeoutMs: input.timeoutMs,
     onStdout: (data: string) => appendLog(session, data),
     onStderr: (data: string) => appendLog(session, data),
+  });
+}
+
+async function fileExists(session: E2BSandboxSession, path: string) {
+  if (!session.sandbox) throw new Error("Sandbox is not ready.");
+  return session.sandbox.files.exists(path, { requestTimeoutMs: 10_000 });
+}
+
+async function readTextFile(session: E2BSandboxSession, path: string) {
+  if (!session.sandbox) throw new Error("Sandbox is not ready.");
+  return session.sandbox.files.read(path, { requestTimeoutMs: 10_000 });
+}
+
+function getRecordValue(value: unknown, key: string) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
+}
+
+function hasDependency(packageJson: unknown, dependencyName: string) {
+  const dependencies = getRecordValue(packageJson, "dependencies");
+  const devDependencies = getRecordValue(packageJson, "devDependencies");
+
+  return (
+    typeof getRecordValue(dependencies, dependencyName) === "string" ||
+    typeof getRecordValue(devDependencies, dependencyName) === "string"
+  );
+}
+
+function hasDevScript(packageJson: unknown) {
+  const scripts = getRecordValue(packageJson, "scripts");
+  return typeof getRecordValue(scripts, "dev") === "string";
+}
+
+function hasWorkspaces(packageJson: unknown) {
+  const workspaces = getRecordValue(packageJson, "workspaces");
+  return Array.isArray(workspaces) || (Boolean(workspaces) && typeof workspaces === "object");
+}
+
+async function hasNestedPackage(session: E2BSandboxSession, directory: string) {
+  return fileExists(session, `${PROJECT_DIR}/${directory}/package.json`);
+}
+
+async function detectUnsupportedRepoShape(session: E2BSandboxSession, rootPackageJson?: unknown) {
+  if (rootPackageJson && hasWorkspaces(rootPackageJson)) {
+    throw new Error(UNSUPPORTED_WORKSPACE_REPO_MESSAGE);
+  }
+
+  const frontendDirectories = ["frontend", "client", "web"];
+  const backendDirectories = ["backend", "server", "api"];
+  const nestedAppDirectories = ["app", "apps", "packages"];
+
+  const frontendMatches = [];
+  const backendMatches = [];
+  const nestedAppMatches = [];
+
+  for (const directory of frontendDirectories) {
+    if (await hasNestedPackage(session, directory)) {
+      frontendMatches.push(directory);
+    }
+  }
+
+  for (const directory of backendDirectories) {
+    if (await hasNestedPackage(session, directory)) {
+      backendMatches.push(directory);
+    }
+  }
+
+  for (const directory of nestedAppDirectories) {
+    if (await fileExists(session, `${PROJECT_DIR}/${directory}`)) {
+      nestedAppMatches.push(directory);
+    }
+  }
+
+  if (frontendMatches.length > 0 && backendMatches.length > 0) {
+    throw new Error(UNSUPPORTED_FULL_STACK_REPO_MESSAGE);
+  }
+
+  if (frontendMatches.length > 0 || nestedAppMatches.length > 0) {
+    throw new Error(UNSUPPORTED_NESTED_APP_REPO_MESSAGE);
+  }
+
+  if (backendMatches.length > 0) {
+    throw new Error(UNSUPPORTED_FULL_STACK_REPO_MESSAGE);
+  }
+}
+
+async function detectPackageManager(session: E2BSandboxSession): Promise<PackageManager> {
+  const lockfiles = [
+    { file: "bun.lock", packageManager: "bun" as const },
+    { file: "bun.lockb", packageManager: "bun" as const },
+    { file: "pnpm-lock.yaml", packageManager: "pnpm" as const },
+    { file: "yarn.lock", packageManager: "yarn" as const },
+    { file: "package-lock.json", packageManager: "npm" as const },
+    { file: "npm-shrinkwrap.json", packageManager: "npm" as const },
+  ];
+
+  const matches: PackageManager[] = [];
+
+  for (const lockfile of lockfiles) {
+    if (await fileExists(session, `${PROJECT_DIR}/${lockfile.file}`)) {
+      matches.push(lockfile.packageManager);
+    }
+  }
+
+  const uniqueMatches = [...new Set(matches)];
+  if (uniqueMatches.length > 1) {
+    throw new Error(
+      "Multiple package manager lockfiles were found. Keep exactly one of bun, npm, pnpm, or yarn lockfiles.",
+    );
+  }
+
+  if (uniqueMatches[0]) return uniqueMatches[0];
+
+  const directoryEntries = await session.sandbox?.files.list(PROJECT_DIR, { requestTimeoutMs: 10_000 });
+  const unsupportedLockfile = directoryEntries?.find((entry) => {
+    const name = entry.name.toLowerCase();
+    return name.includes("lock") && !lockfiles.some((lockfile) => lockfile.file.toLowerCase() === name);
+  });
+
+  if (unsupportedLockfile) {
+    throw new Error(UNSUPPORTED_PACKAGE_MANAGER_MESSAGE);
+  }
+
+  return "npm";
+}
+
+function getInstallCommand(packageManager: PackageManager) {
+  if (packageManager === "bun") return 'export PATH="$HOME/.bun/bin:$PATH"; bun install';
+  if (packageManager === "pnpm") return "pnpm install";
+  if (packageManager === "yarn") return "yarn install";
+  return "npm install";
+}
+
+function getPrepareCommand(packageManager: PackageManager) {
+  if (packageManager !== "bun") return undefined;
+  return 'export PATH="$HOME/.bun/bin:$PATH"; command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash';
+}
+
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function getPreviewHost(previewUrl: string) {
+  try {
+    return new URL(previewUrl).host;
+  } catch {
+    throw new Error("Unable to determine the preview host for Vite.");
+  }
+}
+
+function withViteAllowedHost(command: string, previewHost: string) {
+  return `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=${shellQuote(previewHost)} ${command}`;
+}
+
+function getPreviewCommand(packageManager: PackageManager, previewHost: string) {
+  if (packageManager === "bun") {
+    return `export PATH="$HOME/.bun/bin:$PATH"; ${withViteAllowedHost(
+      `bun run dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`,
+      previewHost,
+    )}`;
+  }
+  if (packageManager === "pnpm") {
+    return withViteAllowedHost(`pnpm dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`, previewHost);
+  }
+  if (packageManager === "yarn") {
+    return withViteAllowedHost(`yarn dev --host 0.0.0.0 --port ${PREVIEW_PORT}`, previewHost);
+  }
+  return withViteAllowedHost(`npm run dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`, previewHost);
+}
+
+async function detectRepoPreviewConfig(session: E2BSandboxSession): Promise<RepoPreviewConfig> {
+  const hasPackageJson = await fileExists(session, `${PROJECT_DIR}/package.json`);
+
+  if (hasPackageJson) {
+    const packageJsonText = await readTextFile(session, `${PROJECT_DIR}/package.json`);
+    let packageJson: unknown;
+
+    try {
+      packageJson = JSON.parse(packageJsonText);
+    } catch {
+      throw new Error(UNSUPPORTED_REPO_MESSAGE);
+    }
+
+    const isViteReact =
+      hasDevScript(packageJson) &&
+      hasDependency(packageJson, "vite") &&
+      hasDependency(packageJson, "react") &&
+      hasDependency(packageJson, "react-dom");
+
+    if (!isViteReact) {
+      await detectUnsupportedRepoShape(session, packageJson);
+      throw new Error(UNSUPPORTED_REPO_MESSAGE);
+    }
+
+    const packageManager = await detectPackageManager(session);
+    const previewHost = getPreviewHost(session.previewUrl);
+    return {
+      installCommand: getInstallCommand(packageManager),
+      kind: "vite-react",
+      prepareCommand: getPrepareCommand(packageManager),
+      previewCommand: getPreviewCommand(packageManager, previewHost),
+      previewCwd: PROJECT_DIR,
+    };
+  }
+
+  if (await fileExists(session, `${PROJECT_DIR}/index.html`)) {
+    return {
+      kind: "static",
+      previewCommand: `python3 -m http.server ${PREVIEW_PORT} --bind 0.0.0.0`,
+      previewCwd: PROJECT_DIR,
+    };
+  }
+
+  await detectUnsupportedRepoShape(session);
+  throw new Error(UNSUPPORTED_REPO_MESSAGE);
+}
+
+async function getRepositoryCloneToken(input: StartSandboxSessionInput) {
+  const token = await getRepoInstallationAccessToken(input.repoOwner, input.repoName);
+
+  if (!token) {
+    throw new Error("Unable to access this repository with the GitHub App installation.");
+  }
+
+  return token;
+}
+
+async function cloneRepository(session: E2BSandboxSession, input: StartSandboxSessionInput, token: string) {
+  const safeRepoUrl = `https://github.com/${input.repoOwner}/${input.repoName}.git`;
+  const authenticatedRepoUrl = `https://x-access-token:${encodeURIComponent(token)}@github.com/${input.repoOwner}/${input.repoName}.git`;
+  session.sensitiveLogValues = [
+    ...(session.sensitiveLogValues ?? []),
+    token,
+    encodeURIComponent(token),
+    authenticatedRepoUrl,
+  ];
+
+  await runStep(session, {
+    command: `git clone ${authenticatedRepoUrl} repo`,
+    cwd: "/home/user",
+    displayCommand: `git clone ${safeRepoUrl} repo`,
+    timeoutMs: 120_000,
   });
 }
 
@@ -506,7 +797,7 @@ async function ensurePreviewServer(session: E2BSandboxSession) {
       appendLog(session, "Preview recovery failed. Checking sandbox health...\n");
       await verifySandboxHealth(session);
       setPreviewState(session, "offline", "Preview unavailable. Restart the preview.");
-      appendLog(session, `Preview restart failed: ${describeError(error)}\n`);
+      appendLog(session, `Preview restart failed: ${describeSessionError(session, error)}\n`);
       throw error;
     }
   };
@@ -520,12 +811,15 @@ async function ensurePreviewServer(session: E2BSandboxSession) {
 
 async function startPreviewServer(session: E2BSandboxSession, reason = "Starting") {
   if (!session.sandbox) throw new Error("Sandbox is not ready.");
+  if (!session.previewCommand || !session.previewCwd) {
+    throw new Error("Preview command is not configured for this sandbox.");
+  }
 
-  appendLog(session, `\n${reason} Vite preview server on port ${PREVIEW_PORT}...\n`);
-  appendLog(session, `$ npm run dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}\n`);
+  appendLog(session, `\n${reason} preview server on port ${PREVIEW_PORT}...\n`);
+  appendLog(session, `$ ${session.previewCommand}\n`);
 
-  const command = (await session.sandbox.commands.run(`npm run dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`, {
-    cwd: PROJECT_DIR,
+  const command = (await session.sandbox.commands.run(session.previewCommand, {
+    cwd: session.previewCwd,
     background: true,
     onStdout: (data: string) => appendLog(session, data),
     onStderr: (data: string) => appendLog(session, data),
@@ -555,12 +849,19 @@ async function isPreviewUrlReachable(session: E2BSandboxSession) {
   }
 }
 
-async function bootstrapSandboxSession(session: E2BSandboxSession) {
+async function bootstrapSandboxSession(session: E2BSandboxSession, input: StartSandboxSessionInput) {
   requireApiKey();
 
   const Sandbox = await getSandboxCtor();
 
   try {
+    const cloneToken = await getRepositoryCloneToken(input);
+    session.sensitiveLogValues = [
+      ...(session.sensitiveLogValues ?? []),
+      cloneToken,
+      encodeURIComponent(cloneToken),
+    ];
+
     assertSessionActive(session);
     setStartupStage(session, "creating", "Creating preview");
     session.status = "starting";
@@ -585,22 +886,35 @@ async function bootstrapSandboxSession(session: E2BSandboxSession) {
     await refreshSandboxInfo(session);
 
     assertSessionActive(session);
-    setStartupStage(session, "scaffolding", "Preparing the React app");
-    await runStep(
-      session,
-      `npm create vite@${CREATE_VITE_VERSION} devin-e2b-preview -- --template react-ts`,
-      120_000,
-      "/home/user",
-    );
+    setStartupStage(session, "scaffolding", "Cloning repository");
+    await cloneRepository(session, input, cloneToken);
 
     assertSessionActive(session);
-    setStartupStage(session, "installing", "Installing app");
-    await runStep(session, "npm install", 180_000);
+    setStartupStage(session, "installing", "Detecting repository type");
+    const previewConfig = await detectRepoPreviewConfig(session);
+    session.repoKind = previewConfig.kind;
+    session.previewCommand = previewConfig.previewCommand;
+    session.previewCwd = previewConfig.previewCwd;
 
-    assertSessionActive(session);
-    setStartupStage(session, "seeding", "Applying starter design");
-    await writeViteConfig(session);
-    await applySandboxVariant(session.sessionId, "launch", { ensurePreview: false });
+    if (previewConfig.prepareCommand) {
+      assertSessionActive(session);
+      setStartupStage(session, "installing", "Preparing package manager");
+      await runStep(session, {
+        command: previewConfig.prepareCommand,
+        timeoutMs: 120_000,
+      });
+    }
+
+    if (previewConfig.installCommand) {
+      assertSessionActive(session);
+      setStartupStage(session, "installing", "Installing dependencies");
+      await runStep(session, {
+        command: previewConfig.installCommand,
+        timeoutMs: 240_000,
+      });
+    } else {
+      appendLog(session, "\nStatic HTML/CSS/JS repository detected. Skipping dependency install.\n");
+    }
 
     assertSessionActive(session);
     setStartupStage(session, "starting-preview", "Starting preview");
@@ -621,7 +935,7 @@ async function bootstrapSandboxSession(session: E2BSandboxSession) {
       return;
     }
 
-    const failureMessage = describeError(error);
+    const failureMessage = describeSessionError(session, error);
     session.message = failureMessage;
     appendLog(session, `\nError: ${failureMessage}\n`);
 
@@ -641,7 +955,7 @@ async function bootstrapSandboxSession(session: E2BSandboxSession) {
         session.status = "error";
         session.message = `Startup failed and automatic cleanup did not complete.\n${failureMessage}`;
         setStartupStage(session, "error", "Startup failed and automatic cleanup did not complete.");
-        appendLog(session, `Automatic startup cleanup failed: ${describeError(cleanupError)}\n`);
+        appendLog(session, `Automatic startup cleanup failed: ${describeSessionError(session, cleanupError)}\n`);
       }
 
       return;
@@ -652,7 +966,7 @@ async function bootstrapSandboxSession(session: E2BSandboxSession) {
   }
 }
 
-async function createSandboxSession() {
+async function createSandboxSession(input: StartSandboxSessionInput) {
   requireApiKey();
 
   const sessionId = crypto.randomUUID();
@@ -671,7 +985,7 @@ async function createSandboxSession() {
 
   sessions.set(sessionId, session);
   scheduleAbandonmentCheck(session);
-  session.startupTask = bootstrapSandboxSession(session).finally(() => {
+  session.startupTask = bootstrapSandboxSession(session, input).finally(() => {
     session.startupTask = undefined;
   });
 
@@ -742,9 +1056,18 @@ export async function restoreSandboxSession({ sessionId, sandboxId }: RestoreSes
   scheduleAbandonmentCheck(session);
   await verifySandboxHealth(session);
 
+  try {
+    const previewConfig = await detectRepoPreviewConfig(session);
+    session.repoKind = previewConfig.kind;
+    session.previewCommand = previewConfig.previewCommand;
+    session.previewCwd = previewConfig.previewCwd;
+  } catch (error) {
+    appendLog(session, `Unable to restore preview configuration: ${describeSessionError(session, error)}\n`);
+  }
+
   const processes = await sandbox.commands.list({ requestTimeoutMs: 10_000 });
-  const viteProcess = processes.find((process) => process.cwd === PROJECT_DIR && process.cmd.includes("npm"));
-  session.previewProcessId = viteProcess?.pid;
+  const previewProcess = processes.find((process) => process.cwd === PROJECT_DIR && process.cmd.includes(String(PREVIEW_PORT)));
+  session.previewProcessId = previewProcess?.pid;
 
   await ensurePreviewServer(session);
   if (session.previewVersion) {
@@ -910,7 +1233,7 @@ async function recoverPreviewAfterEdit(session: E2BSandboxSession) {
       appendLog(session, `Automatic restart result: ${recovered ? "recovered" : "not recovered"}\n`);
       return recovered;
     } catch (error) {
-      appendLog(session, `Automatic restart failed: ${describeError(error)}\n`);
+      appendLog(session, `Automatic restart failed: ${describeSessionError(session, error)}\n`);
       await verifySandboxHealth(session);
       setPreviewState(session, "offline", "Preview crashed after the change. Restart the preview.");
       return false;
@@ -930,59 +1253,13 @@ export async function applySandboxVariant(
   variant: string,
   options: { ensurePreview?: boolean } = {},
 ) {
+  void variant;
+  void options;
   const session = sessions.get(sessionId);
   if (!session?.sandbox) throw new Error("Session not found.");
-  if (session.status === "stopped") throw new Error("Sandbox is already stopped.");
-
   recordSessionHeartbeat(sessionId);
-
-  if (options.ensurePreview ?? true) {
-    await ensurePreviewServer(session);
-  }
-
-  const processAliveBeforeWrite = await isPreviewProcessRunning(session);
-  appendLog(session, `Preview process before write: ${processAliveBeforeWrite ? "running" : "stopped"}\n`);
-
-  const files = getVariantFiles(variant);
-  const previewVersion = buildPreviewVersion(variant);
-  session.previewVersion = previewVersion;
-  appendLog(session, `\nApplying ${files.label} variant...\n`);
-  await session.sandbox.files.write(`${PROJECT_DIR}/src/App.tsx`, files.app(previewVersion));
-  await session.sandbox.files.write(`${PROJECT_DIR}/src/App.css`, files.css);
-  await session.sandbox.files.write(`${PROJECT_DIR}/public/${PREVIEW_VERSION_PATH}`, `${previewVersion}\n`);
-  appendLog(session, "Wrote src/App.tsx and src/App.css\n");
-  appendLog(session, `Updated preview version marker to ${previewVersion}\n`);
-
-  if (options.ensurePreview ?? true) {
-    setPreviewState(session, "recovering", "Saving change and refreshing preview.");
-    await recoverPreviewAfterEdit(session);
-  }
-
-  return publicSession(session);
-}
-
-async function writeViteConfig(session: E2BSandboxSession) {
-  if (!session.sandbox) throw new Error("Sandbox is not ready.");
-
-  await session.sandbox.commands.run("mkdir -p public", { cwd: PROJECT_DIR, timeoutMs: 10_000 });
-  appendLog(session, "\nWriting Vite preview config...\n");
-  await session.sandbox.files.write(
-    `${PROJECT_DIR}/vite.config.ts`,
-    `import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: "0.0.0.0",
-    port: ${PREVIEW_PORT},
-    strictPort: true,
-    allowedHosts: [".e2b.app"],
-  },
-});
-`,
-  );
-  appendLog(session, "Wrote vite.config.ts with fixed preview port for E2B\n");
+  appendLog(session, "\nDemo variant edits are disabled for cloned repository sandboxes.\n");
+  throw new Error("Demo variant edits are disabled for cloned repository sandboxes.");
 }
 
 function getVariantFiles(variant: string) {

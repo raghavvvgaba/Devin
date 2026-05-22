@@ -20,6 +20,10 @@ type GithubInstallation = {
   id: number;
 };
 
+type GithubUserResponse = {
+  login: string;
+};
+
 type GithubUserInstallationsResponse = {
   installations: GithubInstallation[];
 };
@@ -28,7 +32,7 @@ type GithubInstallationReposResponse = {
   repositories: GithubRepo[];
 };
 
-type RepoImportItem = {
+export type RepoImportItem = {
   id: number;
   name: string;
   owner: string;
@@ -106,6 +110,23 @@ export async function fetchImportRepositories(accessToken: string) {
   return unstable_cache(
     async () => fetchImportRepositoriesUncached(accessToken),
     ["github-import-repositories", tokenHash],
+    {
+      revalidate: 60,
+      tags: [getImportRepositoriesTag(tokenHash)],
+    },
+  )();
+}
+
+export async function fetchGithubViewerLogin(accessToken: string) {
+  const tokenHash = hashGithubImportToken(accessToken);
+
+  return unstable_cache(
+    async () => {
+      const user = await githubFetch<GithubUserResponse>("/user", accessToken);
+
+      return user.login;
+    },
+    ["github-import-viewer", tokenHash],
     {
       revalidate: 60,
       tags: [getImportRepositoriesTag(tokenHash)],
