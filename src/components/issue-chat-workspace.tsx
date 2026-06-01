@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { AIChat, type AIChatMessage } from "~/components/ui/ai-chat";
 import { ChatInputBox } from "~/components/ui/chat-input-box";
+import { buildIssueChatRuntimeMessage } from "~/lib/issue-chat-messages";
 
 type IssueChatWorkspaceProps = {
   accessBlocked: boolean;
@@ -26,92 +27,6 @@ type EditResponse =
       code: string;
       status: "error";
     };
-
-function getClientErrorMessage(code: string): AIChatMessage {
-  const fallbackError = {
-    body: "The draft could not be prepared from this chat request.",
-    tone: "error" as const,
-  };
-  const errorCopy: Record<string, Pick<AIChatMessage, "body" | "tone">> = {
-    missing_file_path: {
-      body: "Add the repository file path before preparing the edit.",
-      tone: "error",
-    },
-    missing_instruction: {
-      body: "Write the instruction you want Devin to follow for this issue.",
-      tone: "error",
-    },
-    file_not_found: {
-      body: "That file path does not exist in the sandboxed repository. Try an exact repo-relative path.",
-      tone: "error",
-    },
-    unsupported_file: {
-      body: "This MVP can only prepare edits for text-based files right now.",
-      tone: "error",
-    },
-    edit_access_missing: {
-      body: "GitHub access is missing or expired for this repository, so the edit could not be prepared.",
-      tone: "error",
-    },
-    issue_unavailable: {
-      body: "The issue details could not be loaded from GitHub, so edit prep is paused for the moment.",
-      tone: "error",
-    },
-    edit_ai_unavailable: {
-      body: "The AI edit service is not configured right now, so no draft could be produced.",
-      tone: "error",
-    },
-    invalid_path: {
-      body: "Use a repo-relative file path inside the sandboxed repository.",
-      tone: "error",
-    },
-    edit_no_changes: {
-      body: "The generated edit matched the current file. Tighten the instruction and try again.",
-      tone: "warning",
-    },
-    edit_invalid_response: {
-      body: "The generated edit came back in an unusable format. Try once more with a simpler request.",
-      tone: "error",
-    },
-    edit_provider_rejected_request: {
-      body: "The AI provider rejected this edit request. The server log now includes the OpenRouter response details so we can see which parameter or model constraint caused it.",
-      tone: "error",
-    },
-    edit_rate_limited: {
-      body: "OpenRouter rate limited this edit request. Give it a moment and retry from the same chat thread.",
-      tone: "warning",
-    },
-    edit_generation_failed: {
-      body: "The model failed while preparing the edit. You can retry from this same chat thread.",
-      tone: "error",
-    },
-    missing_session_id: {
-      body: "Start the sandbox first so Devin has a live workspace to edit.",
-      tone: "error",
-    },
-    sandbox_not_running: {
-      body: "The sandbox is not running right now. Start it again, then retry the edit.",
-      tone: "error",
-    },
-    session_not_found: {
-      body: "This sandbox session is no longer available. Start a fresh sandbox and retry the edit.",
-      tone: "error",
-    },
-    chat_persist_failed: {
-      body: "The edit was prepared, but the chat could not be saved. Please retry so the thread stays durable.",
-      tone: "error",
-    },
-    edit_prepare_failed: {
-      ...fallbackError,
-    },
-  };
-
-  return {
-    id: `error-${Date.now()}`,
-    role: "system",
-    ...(errorCopy[code] ?? fallbackError),
-  };
-}
 
 export function IssueChatWorkspace({
   accessBlocked,
@@ -173,7 +88,7 @@ export function IssueChatWorkspace({
     if (!sessionId) {
       setMessages((current) => [
         ...current,
-        getClientErrorMessage("missing_session_id"),
+        buildIssueChatRuntimeMessage("missing_session_id"),
       ]);
       return;
     }
@@ -206,7 +121,7 @@ export function IssueChatWorkspace({
       if (!response.ok || result.status !== "ok") {
         setMessages((current) => [
           ...current.filter((message) => message.id !== thinkingMessage.id),
-          getClientErrorMessage(
+          buildIssueChatRuntimeMessage(
             result.status === "error" ? result.code : "edit_prepare_failed",
           ),
         ]);
@@ -226,7 +141,7 @@ export function IssueChatWorkspace({
     } catch {
       setMessages((current) => [
         ...current.filter((message) => message.id !== thinkingMessage.id),
-        getClientErrorMessage("edit_prepare_failed"),
+        buildIssueChatRuntimeMessage("edit_prepare_failed"),
       ]);
     } finally {
       setIsPreparing(false);

@@ -10,6 +10,7 @@ import { IssueSandboxStatusPanel } from "~/components/issue-sandbox-status-panel
 import { type AIChatMessage } from "~/components/ui/ai-chat";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { buildIssueChatStatusMessage } from "~/lib/issue-chat-messages";
 import { getAuth } from "~/server/auth/session";
 import {
   getIssueChatMessages,
@@ -22,119 +23,6 @@ type IssuePageProps = {
   params: Promise<{ id: string; issueNumber: string }>;
   searchParams: Promise<{ error?: string; success?: string }>;
 };
-
-function getStatusMessage(
-  error: string | undefined,
-  success: string | undefined,
-): AIChatMessage | null {
-  if (success) {
-    const successCopy: Record<string, Pick<AIChatMessage, "body" | "tone">> = {
-      edit_prepared: {
-        body: "The sandbox edit was applied successfully. You can keep iterating from this issue workspace.",
-        tone: "success",
-      },
-    };
-
-    const match = successCopy[success];
-
-    if (match) {
-      return {
-        id: `success-${success}`,
-        role: "system",
-        ...match,
-      };
-    }
-  }
-
-  if (error) {
-    const errorCopy: Record<string, Pick<AIChatMessage, "body" | "tone">> = {
-      missing_file_path: {
-        body: "Add the repository file path in the file section before asking Devin to prepare the edit.",
-        tone: "error",
-      },
-      missing_instruction: {
-        body: "The composer needs an instruction before it can prepare the change for this issue.",
-        tone: "error",
-      },
-      file_not_found: {
-        body: "That file path does not exist in this sandboxed repository. Try an exact repo-relative path and prepare again.",
-        tone: "error",
-      },
-      unsupported_file: {
-        body: "This MVP can only prepare text-based file changes right now. Pick a plain text source file and try again.",
-        tone: "error",
-      },
-      edit_access_missing: {
-        body: "GitHub access for this repository is missing or expired, so the edit cannot be prepared from this workspace yet.",
-        tone: "error",
-      },
-      issue_unavailable: {
-        body: "The issue details could not be loaded from GitHub right now, so the workspace is paused until that recovers.",
-        tone: "error",
-      },
-      edit_ai_unavailable: {
-        body: "The edit preparation service is not configured right now, so the chat can show the workflow but cannot apply a new change yet.",
-        tone: "error",
-      },
-      invalid_path: {
-        body: "Use a repository-relative file path inside the sandbox workspace, then prepare the edit again.",
-        tone: "error",
-      },
-      edit_no_changes: {
-        body: "The prepared result matched the current file, so there was nothing new to apply. Tighten the instruction and try again.",
-        tone: "warning",
-      },
-      edit_invalid_response: {
-        body: "The generated edit came back in an unusable format. Try the request again with a simpler instruction.",
-        tone: "error",
-      },
-      edit_provider_rejected_request: {
-        body: "The AI provider rejected this edit request. The server log now includes the OpenRouter response details so we can see whether the model, structured-output settings, or another parameter caused it.",
-        tone: "error",
-      },
-      edit_rate_limited: {
-        body: "OpenRouter rate limited this edit request. Wait a moment, then retry from the same issue workspace.",
-        tone: "warning",
-      },
-      edit_generation_failed: {
-        body: "The model failed while preparing the change. The workspace is still intact, and you can retry from the composer.",
-        tone: "error",
-      },
-      missing_session_id: {
-        body: "Start the sandbox first so Devin has a live workspace to edit.",
-        tone: "error",
-      },
-      sandbox_not_running: {
-        body: "The sandbox is not running right now. Start it again, then retry the edit from this issue thread.",
-        tone: "error",
-      },
-      session_not_found: {
-        body: "This sandbox session is no longer available. Start a fresh sandbox and prepare the edit again.",
-        tone: "error",
-      },
-      chat_persist_failed: {
-        body: "The edit was prepared, but the chat could not be saved. Retry once so the conversation history stays durable.",
-        tone: "error",
-      },
-      edit_prepare_failed: {
-        body: "The edit could not be staged for this issue. Retry once, and if it persists we can narrow the target file further.",
-        tone: "error",
-      },
-    };
-
-    const match = errorCopy[error];
-
-    if (match) {
-      return {
-        id: `error-${error}`,
-        role: "system",
-        ...match,
-      };
-    }
-  }
-
-  return null;
-}
 
 export default async function ProjectIssuePage({
   params,
@@ -233,7 +121,7 @@ async function IssueWorkspaceSection({
   });
   const persistedMessages = await getIssueChatMessages(chatSession.id);
   const messages: AIChatMessage[] = [...persistedMessages];
-  const statusMessage = getStatusMessage(error, success);
+  const statusMessage = buildIssueChatStatusMessage({ error, success });
 
   if (statusMessage) {
     messages.unshift(statusMessage);
@@ -274,8 +162,8 @@ async function IssueWorkspaceSection({
       <IssueChatWorkspace
         accessBlocked={accessBlocked}
         editAction={editAction}
-        initialFilePath="src/pages/ProjectsPage.jsx"
-        initialInstruction="Currently this page renders all projects. Change it so that only the first two projects are rendered."
+        initialFilePath=""
+        initialInstruction=""
         initialMessages={messages}
         issueNumber={issueNumber}
         projectId={project.id}
