@@ -112,7 +112,7 @@ async function ProjectIssuesSection({
   repoOwner: string;
 }) {
   const issuesResult = await fetchProjectOpenIssues(repoOwner, repoName);
-  const sandboxBaseAction = `/projects/${projectId}/sandbox`;
+  const sandboxBaseAction = `/api/projects/${projectId}/sandbox`;
 
   return (
     <section className="space-y-6">

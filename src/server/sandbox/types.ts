@@ -31,8 +31,10 @@ export type StartSandboxSessionInput = {
 };
 
 export type SandboxFileInput = {
+  endLine?: number;
   path: string;
   sessionId: string;
+  startLine?: number;
 };
 
 export type SandboxWriteFileInput = SandboxFileInput & {
@@ -55,8 +57,12 @@ export type SandboxDiffInput = {
 
 export type SandboxFile = {
   content: string;
+  endLine: number;
   path: string;
   size: number;
+  startLine: number;
+  totalLines: number;
+  truncated: boolean;
 };
 
 export type SandboxFileEntry = {

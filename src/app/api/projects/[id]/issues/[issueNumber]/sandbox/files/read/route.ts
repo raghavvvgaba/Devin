@@ -1,5 +1,6 @@
 import {
   getOwnedIssueProject,
+  readOptionalIntegerField,
   readJsonObject,
   readStringField,
   sandboxError,
@@ -25,9 +26,14 @@ export async function POST(
   const body = await readJsonObject(request);
   const sessionId = readStringField(body, "sessionId");
   const path = readStringField(body, "path");
+  const startLine = readOptionalIntegerField(body, "startLine");
+  const endLine = readOptionalIntegerField(body, "endLine");
 
   if (!sessionId) return sandboxError("missing_session_id");
   if (!path) return sandboxError("missing_path");
+  if (startLine === null || endLine === null) {
+    return sandboxError("invalid_line_range");
+  }
 
   if (
     !verifyIssueSandboxAccess({
@@ -41,7 +47,12 @@ export async function POST(
   }
 
   try {
-    const file = await sandboxProvider.readFile({ path, sessionId });
+    const file = await sandboxProvider.readFile({
+      endLine,
+      path,
+      sessionId,
+      startLine,
+    });
     return sandboxJson({ ok: true as const, file });
   } catch (error) {
     return sandboxToolError(error, "Unable to read file.");

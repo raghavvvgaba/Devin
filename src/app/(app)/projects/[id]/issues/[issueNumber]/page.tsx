@@ -240,7 +240,7 @@ async function IssueWorkspaceSection({
   }
 
   const accessBlocked = issueResult.status !== "ok";
-  const sandboxBaseAction = `/projects/${project.id}/issues/${issueNumber}/sandbox`;
+  const sandboxBaseAction = `/api/projects/${project.id}/issues/${issueNumber}/sandbox`;
   const editAction = `${sandboxBaseAction}/edit`;
 
   return (

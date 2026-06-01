@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { Prisma } from "../../../generated/prisma";
+import { Prisma } from "../../../../generated/prisma";
 import { NextResponse } from "next/server";
 
 import { ensureUserRecord } from "~/server/auth/sync-user";

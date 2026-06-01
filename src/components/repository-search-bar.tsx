@@ -37,7 +37,7 @@ export function RepositorySearchBar({
         formData.set("repoOwner", repoOwner);
         formData.set("repoName", repoName);
 
-        const response = await fetch("/projects", {
+        const response = await fetch("/api/projects", {
           method: "POST",
           body: formData,
           headers: {

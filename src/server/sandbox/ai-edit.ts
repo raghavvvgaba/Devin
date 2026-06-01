@@ -72,8 +72,10 @@ export async function prepareSandboxSingleFileAiEdit(
 
   try {
     file = await sandboxProvider.readFile({
+      endLine: -1,
       path: input.filePath,
       sessionId: input.sessionId,
+      startLine: 1,
     });
   } catch (error) {
     return { status: mapSandboxFileError(error) };

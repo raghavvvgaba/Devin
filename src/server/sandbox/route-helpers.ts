@@ -28,6 +28,7 @@ export function sandboxToolError(error: unknown, fallback: string) {
     "command_not_allowed",
     "file_too_large",
     "invalid_path",
+    "invalid_line_range",
     "missing_path",
   ]);
 
@@ -120,6 +121,28 @@ export function readOptionalStringField(
 ) {
   const value = body?.[field];
   return typeof value === "string" ? value : null;
+}
+
+export function readOptionalIntegerField(
+  body: Record<string, unknown> | null,
+  field: string,
+) {
+  if (!body || !(field in body)) {
+    return undefined;
+  }
+
+  const value = body?.[field];
+
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 export function readRequiredStringValue(
