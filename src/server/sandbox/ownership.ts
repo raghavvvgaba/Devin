@@ -1,79 +1,56 @@
 import "server-only";
 
-type IssueSandboxOwner = {
-  issueNumber: number;
-  projectId: string;
-  userId: string;
-};
+import {
+  canAccessProjectSandboxSession,
+  getSandboxSessionRecordByProjectId,
+  markSandboxSessionStopped,
+} from "~/server/sandbox/session-registry";
 
-type ProjectSandboxOwner = {
-  projectId: string;
-  userId: string;
-};
-
-declare global {
-  var __issueSandboxSessionOwners: Map<string, IssueSandboxOwner> | undefined;
-  var __projectSandboxSessionOwners:
-    | Map<string, ProjectSandboxOwner>
-    | undefined;
+export async function recordIssueSandboxOwner() {
+  return;
 }
 
-const issueSandboxOwners =
-  globalThis.__issueSandboxSessionOwners ?? new Map<string, IssueSandboxOwner>();
-globalThis.__issueSandboxSessionOwners = issueSandboxOwners;
+export async function clearIssueSandboxOwner(sessionId: string) {
+  await markSandboxSessionStopped(sessionId);
+}
 
-const projectSandboxOwners =
-  globalThis.__projectSandboxSessionOwners ??
-  new Map<string, ProjectSandboxOwner>();
-globalThis.__projectSandboxSessionOwners = projectSandboxOwners;
-
-export function recordIssueSandboxOwner(
+export async function canAccessIssueSandbox(
   sessionId: string,
-  owner: IssueSandboxOwner,
+  owner: {
+    issueNumber: number;
+    projectId: string;
+    userId: string;
+  },
 ) {
-  issueSandboxOwners.set(sessionId, owner);
+  return canAccessProjectSandboxSession({
+    projectId: owner.projectId,
+    sessionId,
+    userId: owner.userId,
+  });
 }
 
-export function clearIssueSandboxOwner(sessionId: string) {
-  issueSandboxOwners.delete(sessionId);
+export async function recordProjectSandboxOwner() {
+  return;
 }
 
-export function canAccessIssueSandbox(
+export async function clearProjectSandboxOwner(sessionId: string) {
+  await markSandboxSessionStopped(sessionId);
+}
+
+export async function canAccessProjectSandbox(
   sessionId: string,
-  owner: IssueSandboxOwner,
+  owner: {
+    projectId: string;
+    userId: string;
+  },
 ) {
-  const recordedOwner = issueSandboxOwners.get(sessionId);
-
-  if (!recordedOwner) return false;
-
-  return (
-    recordedOwner.issueNumber === owner.issueNumber &&
-    recordedOwner.projectId === owner.projectId &&
-    recordedOwner.userId === owner.userId
-  );
+  return canAccessProjectSandboxSession({
+    projectId: owner.projectId,
+    sessionId,
+    userId: owner.userId,
+  });
 }
 
-export function recordProjectSandboxOwner(
-  sessionId: string,
-  owner: ProjectSandboxOwner,
-) {
-  projectSandboxOwners.set(sessionId, owner);
-}
-
-export function clearProjectSandboxOwner(sessionId: string) {
-  projectSandboxOwners.delete(sessionId);
-}
-
-export function canAccessProjectSandbox(
-  sessionId: string,
-  owner: ProjectSandboxOwner,
-) {
-  const recordedOwner = projectSandboxOwners.get(sessionId);
-
-  if (!recordedOwner) return false;
-
-  return (
-    recordedOwner.projectId === owner.projectId &&
-    recordedOwner.userId === owner.userId
-  );
+export async function getProjectSandboxSession(projectId: string) {
+  return getSandboxSessionRecordByProjectId(projectId);
 }

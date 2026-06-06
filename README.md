@@ -1,29 +1,141 @@
-# Create T3 App
+# Devin
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+Devin is a Next.js app for importing a GitHub repository, browsing its issues, and working on those issues inside a live E2B sandbox with AI-assisted edit flows.
 
-## What's next? How do I make an app with this?
+## What It Does
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+- Connects a user account to GitHub
+- Imports a repository into the app as a project
+- Lists GitHub issues for that project
+- Starts one shared sandbox per project
+- Lets users inspect files, run commands, view diffs, and prepare AI-assisted edits
+- Persists issue chat history in Postgres through Prisma
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+## Main Flow
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+1. Sign in with Clerk.
+2. Connect GitHub.
+3. Import a repository on `/projects/new`.
+4. Open `/projects/[id]` to browse issues and manage the sandbox.
+5. Open `/projects/[id]/issues/[issueNumber]` to work on a specific issue.
+6. Reuse the same project sandbox for file operations, commands, diffs, and AI edit preparation.
 
-## Learn More
+## Stack
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+- Next.js App Router
+- React
+- Clerk
+- Prisma + PostgreSQL
+- GitHub App / GitHub OAuth
+- E2B sandboxes
+- OpenRouter for AI edit generation
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+## Project Structure
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+- [src/app](src/app)
+  App Router pages, layouts, and API routes
+- [src/components](src/components)
+  UI components for project, issue, and sandbox workflows
+- [src/server](src/server)
+  Server-side modules for GitHub, sandbox, chat, AI, and database access
+- [prisma/schema.prisma](prisma/schema.prisma)
+  Prisma data model and relations
+- [docs/architecture.md](docs/architecture.md)
+  Higher-level frontend, API, and sandbox architecture
+- [docs/database.md](docs/database.md)
+  Human-readable explanation of the Prisma models
 
-## How do I deploy this?
+## Prerequisites
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+- Node.js
+- `pnpm`
+- PostgreSQL database
+- Clerk project credentials
+- GitHub App credentials
+- E2B API key
+- OpenRouter API key if you want AI edit generation enabled
+
+## Environment Variables
+
+The app validates its environment in [src/env.js](src/env.js).
+
+Server-side variables:
+
+- `DATABASE_URL`
+- `CLERK_SECRET_KEY`
+- `GITHUB_APP_ID`
+- `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_APP_CALLBACK_URL`
+- `GITHUB_APP_CLIENT_ID`
+- `GITHUB_APP_CLIENT_SECRET`
+- `GITHUB_APP_INSTALL_URL`
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_MODEL`
+- `E2B_API_KEY`
+
+Client-side variables:
+
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL`
+- `NEXT_PUBLIC_CLERK_SIGN_UP_URL`
+- `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL`
+
+## Development
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Run the app locally:
+
+```bash
+pnpm dev
+```
+
+Useful commands:
+
+- `pnpm build`
+  Production build. This is the most reliable verification command in this repo.
+- `pnpm typecheck`
+  Run TypeScript without emitting files.
+- `pnpm db:migrate`
+  Create and apply Prisma development migrations.
+- `pnpm db:generate`
+  Regenerate Prisma client types.
+- `pnpm db:push`
+  Push schema changes without creating a migration.
+- `pnpm db:studio`
+  Open Prisma Studio.
+
+## Database
+
+The database schema lives in [prisma/schema.prisma](prisma/schema.prisma).
+
+For a human-readable walkthrough of the models and why they exist, see [docs/database.md](docs/database.md).
+
+## Architecture
+
+For the overall app structure, API layout, and sandbox lifecycle, see [docs/architecture.md](docs/architecture.md).
+
+## Troubleshooting
+
+- `pnpm build` is more trustworthy than `pnpm typecheck` when `.next/types` is stale.
+- Some TypeScript errors in this repo disappear after a successful build regenerates Next artifacts.
+- Sandbox state is now persisted per project in Prisma, but the live connected E2B session still lives in memory while the server process is alive.
+
+## Contributing
+
+If you change the Prisma schema, run:
+
+```bash
+pnpm db:migrate
+```
+
+Before shipping changes, prefer verifying with:
+
+```bash
+pnpm build
+pnpm typecheck
+```

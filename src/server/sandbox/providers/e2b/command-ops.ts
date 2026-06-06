@@ -1,7 +1,7 @@
 import { PROJECT_DIR } from "~/server/sandbox/providers/e2b/constants";
+import { getRunningSandboxToolSession } from "~/server/sandbox/providers/e2b/lifecycle";
 import {
   appendLog,
-  getRunningToolSession,
 } from "~/server/sandbox/providers/e2b/session-state";
 import { SANDBOX_DIFF_COMMAND } from "~/server/sandbox/tools/diff";
 import { normalizeSandboxCommand } from "~/server/sandbox/tools/commands";
@@ -14,7 +14,7 @@ import type {
 export async function runSandboxCommand(
   input: SandboxCommandInput,
 ): Promise<SandboxCommandResult> {
-  const session = getRunningToolSession(input.sessionId);
+  const session = await getRunningSandboxToolSession(input.sessionId);
   const command = normalizeSandboxCommand(input.command);
 
   appendLog(session, `\n$ ${command}\n`);

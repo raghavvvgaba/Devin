@@ -173,7 +173,7 @@ export function readRequiredStringValue(
   return typeof value === "string" ? value : null;
 }
 
-export function verifyIssueSandboxAccess(input: {
+export async function verifyIssueSandboxAccess(input: {
   issueNumber: number;
   projectId: string;
   sessionId: string;
@@ -214,7 +214,7 @@ export async function withOwnedProjectSandboxRoute(
   return handler(access as OwnedProjectSandboxAccess);
 }
 
-export function validateProjectSandboxSession(
+export async function validateProjectSandboxSession(
   access: OwnedProjectSandboxAccess,
   sessionId: string | null,
 ) {
@@ -223,10 +223,10 @@ export function validateProjectSandboxSession(
   }
 
   if (
-    !canAccessProjectSandbox(sessionId, {
+    !(await canAccessProjectSandbox(sessionId, {
       projectId: access.project.id,
       userId: access.userId,
-    })
+    }))
   ) {
     return sandboxError("session_not_found", 404);
   }
@@ -234,7 +234,7 @@ export function validateProjectSandboxSession(
   return null;
 }
 
-export function validateIssueSandboxSession(
+export async function validateIssueSandboxSession(
   access: OwnedIssueSandboxAccess,
   sessionId: string | null,
 ) {
@@ -243,12 +243,12 @@ export function validateIssueSandboxSession(
   }
 
   if (
-    !verifyIssueSandboxAccess({
+    !(await verifyIssueSandboxAccess({
       issueNumber: access.issueNumber,
       projectId: access.project.id,
       sessionId,
       userId: access.userId,
-    })
+    }))
   ) {
     return sandboxError("session_not_found", 404);
   }

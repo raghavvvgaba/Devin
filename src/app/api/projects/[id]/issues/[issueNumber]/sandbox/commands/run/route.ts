@@ -24,7 +24,7 @@ export async function POST(
 
     if (!command) return sandboxError("missing_command");
 
-    const sessionError = validateIssueSandboxSession(access, sessionId);
+    const sessionError = await validateIssueSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;

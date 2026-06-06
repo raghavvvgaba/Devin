@@ -27,7 +27,7 @@ export async function POST(
     if (!path) return sandboxError("missing_path");
     if (content === null) return sandboxError("missing_content");
 
-    const sessionError = validateIssueSandboxSession(access, sessionId);
+    const sessionError = await validateIssueSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;

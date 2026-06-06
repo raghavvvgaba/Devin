@@ -55,8 +55,8 @@ export function IssueChatWorkspace({
   );
 
   const storageKey = useMemo(
-    () => `devin:sandbox:${projectId}:${issueNumber}`,
-    [issueNumber, projectId],
+    () => `devin:sandbox:${projectId}`,
+    [projectId],
   );
 
   function getSandboxSessionId() {

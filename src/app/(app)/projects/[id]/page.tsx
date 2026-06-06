@@ -179,7 +179,6 @@ async function ProjectIssuesSection({
 
       <IssueSandboxStatusPanel
         heartbeatAction={`${sandboxBaseAction}/heartbeat`}
-        issueNumber={0}
         projectId={projectId}
         restartPreviewAction={`${sandboxBaseAction}/restart-preview`}
         sessionAction={`${sandboxBaseAction}/session`}

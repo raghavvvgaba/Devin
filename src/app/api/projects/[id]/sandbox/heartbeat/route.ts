@@ -19,7 +19,7 @@ export async function POST(
   return withOwnedProjectSandboxRoute(request, context, async (access) => {
     const body = await readJsonObject(request);
     const sessionId = readStringField(body, "sessionId");
-    const sessionError = validateProjectSandboxSession(access, sessionId);
+    const sessionError = await validateProjectSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;
@@ -29,7 +29,7 @@ export async function POST(
       return sandboxError("missing_session_id");
     }
 
-    const session = sandboxProvider.heartbeat(sessionId);
+    const session = await sandboxProvider.heartbeat(sessionId);
 
     if (!session) {
       return sandboxJson({ ok: false as const, error: "session_not_found" }, { status: 404 });

@@ -29,7 +29,7 @@ export async function POST(
       return sandboxError("invalid_line_range");
     }
 
-    const sessionError = validateIssueSandboxSession(access, sessionId);
+    const sessionError = await validateIssueSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;

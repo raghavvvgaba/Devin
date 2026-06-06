@@ -57,7 +57,6 @@ type SavedSandboxSession = {
 
 type IssueSandboxStatusPanelProps = {
   heartbeatAction: string;
-  issueNumber: number;
   projectId: string;
   restartPreviewAction: string;
   sessionAction: string;
@@ -126,17 +125,13 @@ async function readSandboxResponse(response: Response) {
 
 export function IssueSandboxStatusPanel({
   heartbeatAction,
-  issueNumber,
   projectId,
   restartPreviewAction,
   sessionAction,
   startAction,
   stopAction,
 }: IssueSandboxStatusPanelProps) {
-  const storageKey = useMemo(
-    () => `devin:sandbox:${projectId}:${issueNumber}`,
-    [issueNumber, projectId],
-  );
+  const storageKey = useMemo(() => `devin:sandbox:${projectId}`, [projectId]);
   const [session, setSession] = useState<SandboxSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);

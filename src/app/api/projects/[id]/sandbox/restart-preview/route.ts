@@ -20,7 +20,7 @@ export async function POST(
   return withOwnedProjectSandboxRoute(request, context, async (access) => {
     const body = await readJsonObject(request);
     const sessionId = readStringField(body, "sessionId");
-    const sessionError = validateProjectSandboxSession(access, sessionId);
+    const sessionError = await validateProjectSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;

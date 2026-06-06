@@ -21,7 +21,7 @@ export async function POST(
     const body = await readJsonObject(request);
     const sessionId = readStringField(body, "sessionId");
     const path = readOptionalStringField(body, "path") ?? "";
-    const sessionError = validateIssueSandboxSession(access, sessionId);
+    const sessionError = await validateIssueSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;

@@ -8,9 +8,6 @@ import {
   validateIssueSandboxSession,
   withOwnedIssueSandboxRoute,
 } from "~/server/sandbox/route-helpers";
-import {
-  clearIssueSandboxOwner,
-} from "~/server/sandbox/ownership";
 import { sandboxProvider } from "~/server/sandbox/provider";
 
 export const runtime = "nodejs";
@@ -24,7 +21,7 @@ export async function POST(
     const body = await readJsonObject(request);
     const sessionId = readStringField(body, "sessionId");
     const environmentId = readStringField(body, "environmentId") ?? undefined;
-    const sessionError = validateIssueSandboxSession(access, sessionId);
+    const sessionError = await validateIssueSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;
@@ -36,10 +33,7 @@ export async function POST(
 
     return respondWithSandboxAction(
       () => sandboxProvider.stop({ environmentId, sessionId }),
-      (session) => {
-        clearIssueSandboxOwner(sessionId);
-        return sandboxJson({ ok: true as const, session });
-      },
+      (session) => sandboxJson({ ok: true as const, session }),
       "Unable to stop sandbox.",
     );
   });

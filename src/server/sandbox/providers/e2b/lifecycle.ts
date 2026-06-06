@@ -2,6 +2,16 @@ import type { Sandbox as E2BSandbox, SandboxInfo } from "e2b";
 
 import { getRepoInstallationAccessToken } from "~/server/github/app-auth";
 import {
+  createSandboxSessionRecord,
+  deleteSandboxSessionRecord,
+  getReusableProjectSandboxSession,
+  getSandboxSessionRecordBySessionId,
+  markSandboxSessionStopped,
+  markSandboxSessionStoppedBySandboxId,
+  toStoppedPublicSession,
+  touchSandboxSessionHeartbeat,
+} from "~/server/sandbox/session-registry";
+import {
   PREVIEW_PORT,
   PROJECT_DIR,
   RESTART_PREVIEW_TIMEOUT_MS,
@@ -30,7 +40,6 @@ import {
   publicSession,
   recordSessionHeartbeat,
   scheduleAbandonmentCheck,
-  setPreviewState,
   setStartupStage,
   setTrackedSession,
   stoppedSession,
@@ -56,10 +65,15 @@ import type {
 } from "~/server/sandbox/types";
 
 async function getRepositoryCloneToken(input: StartSessionInput) {
-  const token = await getRepoInstallationAccessToken(input.repoOwner, input.repoName);
+  const token = await getRepoInstallationAccessToken(
+    input.repoOwner,
+    input.repoName,
+  );
 
   if (!token) {
-    throw new Error("Unable to access this repository with the GitHub App installation.");
+    throw new Error(
+      "Unable to access this repository with the GitHub App installation.",
+    );
   }
 
   return token;
@@ -87,14 +101,10 @@ async function cloneRepository(
   });
 }
 
-async function bootstrapSandboxSession(
+async function continueSandboxStartup(
   session: E2BSandboxSession,
   input: StartSessionInput,
 ) {
-  requireApiKey();
-
-  const Sandbox = await getSandboxCtor();
-
   try {
     const cloneToken = await getRepositoryCloneToken(input);
     session.sensitiveLogValues = [
@@ -102,29 +112,6 @@ async function bootstrapSandboxSession(
       cloneToken,
       encodeURIComponent(cloneToken),
     ];
-
-    assertSessionActive(session);
-    setStartupStage(session, "creating", "Creating preview");
-    session.status = "starting";
-    appendLog(session, "Creating E2B sandbox...\n");
-    const sandbox = await Sandbox.create("base", {
-      timeoutMs: SANDBOX_TIMEOUT_MS,
-      metadata: {
-        app: SANDBOX_METADATA_APP,
-        sessionId: session.sessionId,
-      },
-    });
-
-    if (session.cancelRequested) {
-      await sandbox.kill({ requestTimeoutMs: 30_000 });
-      throw new SessionCancelledError();
-    }
-
-    session.sandbox = sandbox;
-    session.sandboxId = sandbox.sandboxId;
-    session.previewUrl = normalizePreviewUrl(sandbox.getHost(PREVIEW_PORT));
-    session.status = "installing";
-    await refreshSandboxInfo(session);
 
     assertSessionActive(session);
     setStartupStage(session, "scaffolding", "Cloning repository");
@@ -218,18 +205,82 @@ async function bootstrapSandboxSession(
           )}\n`,
         );
       }
-
-      return;
+    } else {
+      session.status = "error";
+      setStartupStage(session, "error", "Unable to start preview");
     }
 
-    session.status = "error";
-    setStartupStage(session, "error", "Unable to start preview");
+    deleteTrackedSession(session.sessionId);
+    await deleteSandboxSessionRecord(session.sessionId);
   }
+}
+
+async function restoreActiveSandboxSession(sessionId: string) {
+  const record = await getSandboxSessionRecordBySessionId(sessionId);
+
+  if (!record) {
+    return null;
+  }
+
+  if (record.isStopped) {
+    return toStoppedPublicSession(record);
+  }
+
+  try {
+    return await restoreSandboxSession({
+      sandboxId: record.sandboxId,
+      sessionId: record.sessionId,
+    });
+  } catch (error) {
+    if (error instanceof SandboxExpiredError) {
+      await markSandboxSessionStopped(sessionId);
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function getRunningSandboxToolSession(sessionId: string) {
+  let session = getTrackedSession(sessionId);
+
+  if (!session) {
+    const restored = await restoreActiveSandboxSession(sessionId);
+
+    if (!restored) {
+      throw new Error("Session not found.");
+    }
+
+    session = getTrackedSession(sessionId);
+  }
+
+  if (!session?.sandbox) {
+    throw new Error("Session not found.");
+  }
+
+  if (session.status !== "running") {
+    throw new Error("Sandbox is not running.");
+  }
+
+  return session;
 }
 
 export async function createSandboxSession(input: StartSessionInput) {
   requireApiKey();
 
+  const reusable = await getReusableProjectSandboxSession({
+    projectId: input.projectId,
+    userId: input.userId,
+  });
+
+  if (reusable) {
+    const restored = await restoreActiveSandboxSession(reusable.sessionId);
+    if (restored) {
+      return restored;
+    }
+  }
+
+  const Sandbox = await getSandboxCtor();
   const sessionId = crypto.randomUUID();
   const session: E2BSandboxSession = {
     sessionId,
@@ -244,24 +295,89 @@ export async function createSandboxSession(input: StartSessionInput) {
     lastHeartbeatAt: new Date().toISOString(),
   };
 
+  appendLog(session, "Creating E2B sandbox...\n");
+  const sandbox = await Sandbox.create("base", {
+    metadata: {
+      app: SANDBOX_METADATA_APP,
+      sessionId,
+    },
+    timeoutMs: SANDBOX_TIMEOUT_MS,
+  });
+
+  if (session.cancelRequested) {
+    await sandbox.kill({ requestTimeoutMs: 30_000 });
+    throw new SessionCancelledError();
+  }
+
+  session.sandbox = sandbox;
+  session.sandboxId = sandbox.sandboxId;
+  session.previewUrl = normalizePreviewUrl(sandbox.getHost(PREVIEW_PORT));
+  session.status = "installing";
+
   setTrackedSession(session);
   scheduleAbandonmentCheck(session);
-  session.startupTask = bootstrapSandboxSession(session, input).finally(() => {
+  await refreshSandboxInfo(session);
+
+  const startedAt = session.startedAt ? new Date(session.startedAt) : new Date();
+  const lastHeartbeatAt = session.lastHeartbeatAt
+    ? new Date(session.lastHeartbeatAt)
+    : new Date();
+
+  await createSandboxSessionRecord({
+    lastHeartbeatAt,
+    previewUrl: session.previewUrl,
+    projectId: input.projectId,
+    sandboxId: session.sandboxId,
+    sessionId,
+    startedAt,
+    userId: input.userId,
+  });
+
+  session.startupTask = continueSandboxStartup(session, input).finally(() => {
     session.startupTask = undefined;
   });
 
   return publicSession(session);
 }
 
-export function getSandboxSession(sessionId: string) {
+export async function getSandboxSession(sessionId: string) {
   const session = getTrackedSession(sessionId);
-  if (!session) return null;
-  return publicSession(session);
+
+  if (session) {
+    return publicSession(session);
+  }
+
+  return restoreActiveSandboxSession(sessionId);
 }
 
-export function heartbeatSandboxSession(sessionId: string) {
-  const session = recordSessionHeartbeat(sessionId);
-  if (!session) return null;
+export async function heartbeatSandboxSession(sessionId: string) {
+  let session = recordSessionHeartbeat(sessionId);
+
+  if (!session) {
+    const restored = await restoreActiveSandboxSession(sessionId);
+
+    if (!restored) {
+      return null;
+    }
+
+    if (restored.status === "stopped") {
+      return restored;
+    }
+
+    session = recordSessionHeartbeat(sessionId);
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  if (session.lastHeartbeatAt) {
+    await touchSandboxSessionHeartbeat(
+      session.sessionId,
+      new Date(session.lastHeartbeatAt),
+    );
+  }
+
   return publicSession(session);
 }
 
@@ -318,6 +434,7 @@ export async function restoreSandboxSession({
 
   setTrackedSession(session);
   scheduleAbandonmentCheck(session);
+  await refreshSandboxInfo(session);
   await verifySandboxHealth(session);
 
   try {
@@ -394,10 +511,13 @@ export async function cleanupSandboxSession(sandboxId: string) {
   }
 
   if (info.metadata.app !== SANDBOX_METADATA_APP) {
-    throw new Error("Refusing to kill sandbox because it was not created by this app.");
+    throw new Error(
+      "Refusing to kill sandbox because it was not created by this app.",
+    );
   }
 
   const killed = await Sandbox.kill(sandboxId, { requestTimeoutMs: 30_000 });
+  await markSandboxSessionStoppedBySandboxId(sandboxId);
 
   for (const [sessionId, session] of trackedSessions.entries()) {
     if (session.sandboxId === sandboxId) {
@@ -405,6 +525,7 @@ export async function cleanupSandboxSession(sandboxId: string) {
       session.status = "stopped";
       appendLog(session, "Sandbox killed from cleanup panel.\n");
       deleteTrackedSession(sessionId);
+      await markSandboxSessionStopped(sessionId);
     }
   }
 
@@ -421,9 +542,15 @@ export async function stopSandboxSession({
 }: StopSandboxSessionInput) {
   requireApiKey();
 
-  const sandboxId = environmentId;
+  const record = await getSandboxSessionRecordBySessionId(sessionId);
+  const sandboxId = environmentId ?? record?.sandboxId;
   const session = getTrackedSession(sessionId);
+
   if (!session) {
+    if (record?.isStopped) {
+      return toStoppedPublicSession(record);
+    }
+
     if (!sandboxId) throw new Error("Session not found.");
 
     const Sandbox = await getSandboxCtor();
@@ -433,10 +560,16 @@ export async function stopSandboxSession({
       if (!isSandboxNotFoundError(error)) throw error;
     }
 
+    await markSandboxSessionStopped(sessionId);
     deleteTrackedSession(sessionId);
-    return stoppedSession(sessionId, sandboxId, [
-      "Killed sandbox using saved sandbox ID.\n",
-    ]);
+    return record
+      ? toStoppedPublicSession({
+          ...record,
+          isStopped: true,
+        })
+      : stoppedSession(sessionId, sandboxId, [
+          "Killed sandbox using saved sandbox ID.\n",
+        ]);
   }
 
   try {
@@ -452,11 +585,13 @@ export async function stopSandboxSession({
     session.sandbox = undefined;
     session.previewProcessId = undefined;
     appendLog(session, "Sandbox stopped.\n");
+    await markSandboxSessionStopped(sessionId);
     deleteTrackedSession(sessionId);
   } catch (error) {
     if (isSandboxNotFoundError(error)) {
       session.status = "stopped";
       appendLog(session, "Sandbox was already gone.\n");
+      await markSandboxSessionStopped(sessionId);
       deleteTrackedSession(sessionId);
       return publicSession(session);
     }
@@ -471,16 +606,36 @@ export async function stopSandboxSession({
 }
 
 export async function restartSandboxPreview(sessionId: string) {
-  const session = getTrackedSession(sessionId);
-  if (!session?.sandbox) throw new Error("Session not found.");
-  if (session.status === "stopped") throw new Error("Sandbox is already stopped.");
+  let session = getTrackedSession(sessionId);
 
-  recordSessionHeartbeat(sessionId);
+  if (!session) {
+    const restored = await restoreActiveSandboxSession(sessionId);
+
+    if (!restored || restored.status === "stopped") {
+      throw new Error("Session not found.");
+    }
+
+    session = getTrackedSession(sessionId);
+  }
+
+  if (!session?.sandbox) throw new Error("Session not found.");
+  if (session.status === "stopped")
+    throw new Error("Sandbox is already stopped.");
+
+  const heartbeat = recordSessionHeartbeat(sessionId);
+  if (heartbeat?.lastHeartbeatAt) {
+    await touchSandboxSessionHeartbeat(
+      heartbeat.sessionId,
+      new Date(heartbeat.lastHeartbeatAt),
+    );
+  }
 
   appendLog(session, "\nManual preview restart requested.\n");
-  session.restartingPreview = restartPreviewServer(session, "Restarting").finally(() => {
-    session.restartingPreview = undefined;
-  });
+  session.restartingPreview = restartPreviewServer(session, "Restarting").finally(
+    () => {
+      session.restartingPreview = undefined;
+    },
+  );
   await session.restartingPreview;
   await verifySandboxHealth(session);
   await waitForPreview(session, session.previewVersion, {

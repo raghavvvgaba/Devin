@@ -16,7 +16,7 @@ export async function GET(
 ) {
   return withOwnedProjectSandboxRoute(request, context, async (access) => {
     const sessionId = readQueryStringField(request, "sessionId");
-    const sessionError = validateProjectSandboxSession(access, sessionId);
+    const sessionError = await validateProjectSandboxSession(access, sessionId);
 
     if (sessionError) {
       return sessionError;
@@ -26,7 +26,7 @@ export async function GET(
       return sandboxError("missing_session_id");
     }
 
-    const session = sandboxProvider.get(sessionId);
+    const session = await sandboxProvider.get(sessionId);
 
     if (!session) {
       return sandboxError("session_not_found", 404);

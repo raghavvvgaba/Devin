@@ -2,10 +2,10 @@ import {
   DEFAULT_SANDBOX_READ_LINE_COUNT,
   DEFAULT_SANDBOX_READ_MAX_CHARACTERS,
 } from "~/server/sandbox/providers/e2b/constants";
+import { getRunningSandboxToolSession } from "~/server/sandbox/providers/e2b/lifecycle";
 import { recoverPreviewAfterEdit } from "~/server/sandbox/providers/e2b/preview";
 import {
   appendLog,
-  getRunningToolSession,
   publicSession,
   setPreviewState,
 } from "~/server/sandbox/providers/e2b/session-state";
@@ -103,7 +103,7 @@ function sliceSandboxFileContent(
 }
 
 export async function readSandboxFile(input: SandboxFileInput): Promise<SandboxFile> {
-  const session = getRunningToolSession(input.sessionId);
+  const session = await getRunningSandboxToolSession(input.sessionId);
   const relativePath = normalizeSandboxRelativePath(input.path);
   const sandboxPath = toSandboxRepoPath(relativePath);
   const content = await session.sandbox!.files.read(sandboxPath, {
@@ -118,7 +118,7 @@ export async function readSandboxFile(input: SandboxFileInput): Promise<SandboxF
 }
 
 export async function writeSandboxFile(input: SandboxWriteFileInput) {
-  const session = getRunningToolSession(input.sessionId);
+  const session = await getRunningSandboxToolSession(input.sessionId);
   const relativePath = normalizeSandboxRelativePath(input.path);
   const sandboxPath = toSandboxRepoPath(relativePath);
   assertSandboxFileContentSize(input.content);
@@ -140,7 +140,7 @@ export async function writeSandboxFile(input: SandboxWriteFileInput) {
 export async function listSandboxFiles(
   input: SandboxListFilesInput,
 ): Promise<SandboxFileEntry[]> {
-  const session = getRunningToolSession(input.sessionId);
+  const session = await getRunningSandboxToolSession(input.sessionId);
   const relativePath = normalizeSandboxRelativePath(input.path, { allowRoot: true });
   const sandboxPath = toSandboxRepoPath(relativePath);
   const entries = await session.sandbox!.files.list(sandboxPath, {

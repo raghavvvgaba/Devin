@@ -148,12 +148,12 @@ async function handlePrepareEdit(
   }
 
   if (
-    !verifyIssueSandboxAccess({
+    !(await verifyIssueSandboxAccess({
       issueNumber: access.issueNumber,
       projectId: access.project.id,
       sessionId,
       userId: access.userId,
-    })
+    }))
   ) {
     return requestExpectsJson
       ? jsonError("session_not_found", 404)

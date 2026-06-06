@@ -26,8 +26,10 @@ export type StopSandboxSessionInput = {
 };
 
 export type StartSandboxSessionInput = {
+  projectId: string;
   repoName: string;
   repoOwner: string;
+  userId: string;
 };
 
 export type SandboxFileInput = {
@@ -81,8 +83,8 @@ export type SandboxCommandResult = {
 
 export type SandboxProvider = {
   getDiff: (input: SandboxDiffInput) => Promise<string>;
-  get: (sessionId: string) => SandboxSession | null;
-  heartbeat: (sessionId: string) => SandboxSession | null;
+  get: (sessionId: string) => Promise<SandboxSession | null>;
+  heartbeat: (sessionId: string) => Promise<SandboxSession | null>;
   listFiles: (input: SandboxListFilesInput) => Promise<SandboxFileEntry[]>;
   readFile: (input: SandboxFileInput) => Promise<SandboxFile>;
   restartPreview: (sessionId: string) => Promise<SandboxSession>;
