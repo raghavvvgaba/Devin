@@ -3,37 +3,13 @@ import { Github, ShieldCheck, ShieldAlert, ExternalLink, Database } from "lucide
 import { AppShell } from "~/components/app-shell";
 import { getAuth } from "~/server/auth/session";
 import { env } from "~/env";
-import { requireGithubConnection } from "~/server/github/guard";
-import { readGithubImportSession } from "~/server/github/import-session";
-import {
-  fetchGithubViewerLogin,
-  fetchImportRepositories,
-} from "~/server/github/repos";
-import { listImportedProjectsForUser } from "~/server/projects";
+import { getNewProjectPageData } from "~/server/projects";
 import { Button } from "~/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { RepositoryOwnerFilter } from "~/components/repository-owner-filter";
 import { RepositorySearchBar } from "~/components/repository-search-bar";
 import { ImportGuidePopup } from "~/components/import-guide-popup";
 import { ImportLoadButton } from "~/components/import-load-button";
-
-const errorMessages: Record<string, string> = {
-  github_required: "Connect GitHub before importing a repository.",
-  github_repo_fetch_failed:
-    "GitHub did not return the repository list. Refresh access and try again.",
-  missing_repo_selection: "Choose a repository before importing.",
-  refresh_import_session:
-    "Your GitHub import session expired. Refresh repository access and try again.",
-  repo_needs_access:
-    "That repository is visible, but the GitHub App does not have access yet.",
-  repo_not_in_session:
-    "That repository is not in the current GitHub import session. Refresh and try again.",
-};
-
-const successMessages: Record<string, string> = {
-  import_session_ready:
-    "Repository access refreshed. You can import any repo marked Ready.",
-};
 
 type NewProjectPageProps = {
   searchParams: Promise<{
@@ -47,70 +23,17 @@ export default async function NewProjectPage({
   searchParams,
 }: NewProjectPageProps) {
   const { userId } = await getAuth();
-  await requireGithubConnection(userId!);
-
   const params = await searchParams;
-  const importSession = await readGithubImportSession();
-  const importedProjects = await listImportedProjectsForUser(userId!);
-
-  const importedProjectsRecord = Object.fromEntries(
-    importedProjects.map((project) => [
-      `${project.repoOwner.toLowerCase()}/${project.repoName.toLowerCase()}`,
-      project.id,
-    ]),
-  );
-
-  let repoList:
-    | Awaited<ReturnType<typeof fetchImportRepositories>>
-    | null = null;
-  let viewerLogin: string | null = null;
-  let sessionError: string | null = null;
-
-  if (importSession) {
-    try {
-      [repoList, viewerLogin] = await Promise.all([
-        fetchImportRepositories(importSession.accessToken),
-        fetchGithubViewerLogin(importSession.accessToken),
-      ]);
-    } catch {
-      sessionError =
-        errorMessages.github_repo_fetch_failed ??
-        "GitHub did not return the repository list. Refresh access and try again.";
-    }
-  }
-
-  const errorMessage =
-    sessionError ??
-    (params.error ? (errorMessages[params.error] ?? null) : null) ??
-    null;
-  const successMessage = params.success
-    ? (successMessages[params.success] ?? null)
-    : null;
-  const ownerOptions = repoList
-    ? Array.from(new Set(repoList.map((repo) => repo.owner))).sort((a, b) => {
-        if (viewerLogin && a.toLowerCase() === viewerLogin.toLowerCase()) {
-          return -1;
-        }
-
-        if (viewerLogin && b.toLowerCase() === viewerLogin.toLowerCase()) {
-          return 1;
-        }
-
-        return a.localeCompare(b);
-      })
-    : [];
-  const requestedOwner = params.owner;
-  const selectedOwner =
-    ownerOptions.find(
-      (owner) => requestedOwner?.toLowerCase() === owner.toLowerCase(),
-    ) ??
-    ownerOptions.find(
-      (owner) => viewerLogin?.toLowerCase() === owner.toLowerCase(),
-    ) ??
-    ownerOptions[0] ??
-    "";
-  const filteredRepos =
-    repoList?.filter((repo) => repo.owner === selectedOwner) ?? [];
+  const {
+    errorMessage,
+    filteredRepos,
+    importSession,
+    importedProjectsRecord,
+    ownerOptions,
+    repoList,
+    selectedOwner,
+    successMessage,
+  } = await getNewProjectPageData(userId!, params);
 
   return (
     <AppShell title="Import Repository">

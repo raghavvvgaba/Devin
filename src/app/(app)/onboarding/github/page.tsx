@@ -4,34 +4,11 @@ import { Github, CheckCircle2, Circle, ArrowRight, ExternalLink, Unlink } from "
 import { AppShell } from "~/components/app-shell";
 import { env } from "~/env";
 import { getAuth } from "~/server/auth/session";
-import { getGithubConnectionStatus } from "~/server/github/connection";
+import { getGithubOnboardingPageData } from "~/server/projects";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-
-const milestones = [
-  "Authorize the GitHub App on your user account",
-  "Install the app on the target account or organization",
-  "Return here and initialize repository import",
-];
-
-const errorMessages: Record<string, string> = {
-  access_denied:
-    "GitHub authorization was cancelled before the app could connect your account.",
-  github_connect_failed:
-    "GitHub connection did not complete successfully. Please try again.",
-  github_required: "Connect GitHub before importing a repository.",
-  invalid_state:
-    "The GitHub callback could not be verified. Please restart the connection flow.",
-  missing_callback_params:
-    "GitHub did not return the expected callback parameters.",
-  missing_code_verifier:
-    "The secure GitHub verification data expired. Please try connecting again.",
-  token_exchange_failed: "GitHub did not return a usable access token.",
-  user_fetch_failed:
-    "GitHub connected, but the user profile lookup failed afterward.",
-};
 
 type GithubOnboardingPageProps = {
   searchParams: Promise<{
@@ -45,18 +22,8 @@ export default async function GithubOnboardingPage({
 }: GithubOnboardingPageProps) {
   const { userId } = await getAuth();
   const params = await searchParams;
-  const status = await getGithubConnectionStatus(userId!);
-
-  const errorMessage = params.error ? errorMessages[params.error] : null;
-  const successMessage =
-    params.success === "connected"
-      ? "GitHub identity successfully mapped to Clerk session."
-      : params.success === "disconnected"
-        ? "GitHub identity unmapped. Local project records purged."
-        : null;
-  const nextStepMessage = !status.connected
-    ? "Connect your GitHub account to unlock repository import."
-    : "Install the GitHub App and continue to repository import.";
+  const { errorMessage, milestones, nextStepMessage, status, successMessage } =
+    await getGithubOnboardingPageData(userId!, params);
 
   return (
     <AppShell

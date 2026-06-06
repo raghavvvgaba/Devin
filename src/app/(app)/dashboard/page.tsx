@@ -10,16 +10,11 @@ import { AppShell } from "~/components/app-shell";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { getAuth } from "~/server/auth/session";
-import { getGithubConnectionStatus } from "~/server/github/connection";
-import { listProjectsForUser } from "~/server/projects";
+import { getDashboardPageData } from "~/server/projects";
 
 export default async function DashboardPage() {
   const { userId } = await getAuth();
-
-  const [projects, githubStatus] = await Promise.all([
-    listProjectsForUser(userId!),
-    getGithubConnectionStatus(userId!),
-  ]);
+  const { githubStatus, projects } = await getDashboardPageData(userId!);
 
   const projectCount = projects.length;
 

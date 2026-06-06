@@ -5,6 +5,7 @@ import {
   hashGithubImportToken,
 } from "~/server/github/cache";
 import { GITHUB_API_VERSION } from "~/server/github/constants";
+import type { RepoImportItem } from "~/lib/github-types";
 
 type GithubRepo = {
   id: number;
@@ -30,15 +31,6 @@ type GithubUserInstallationsResponse = {
 
 type GithubInstallationReposResponse = {
   repositories: GithubRepo[];
-};
-
-export type RepoImportItem = {
-  id: number;
-  name: string;
-  owner: string;
-  fullName: string;
-  private: boolean;
-  status: "ready" | "needs_access";
 };
 
 async function githubFetch<T>(path: string, accessToken: string) {

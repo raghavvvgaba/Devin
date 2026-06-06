@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import {
   Activity,
   ChevronLeft,
@@ -17,11 +16,9 @@ import { IssueSandboxStatusPanel } from "~/components/issue-sandbox-status-panel
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Skeleton } from "~/components/ui/skeleton";
 import { env } from "~/env";
 import { getAuth } from "~/server/auth/session";
-import { fetchProjectOpenIssues } from "~/server/github/issues";
-import { getOwnedProject } from "~/server/projects";
+import { getProjectPageData } from "~/server/projects";
 
 type ProjectPageProps = {
   params: Promise<{ id: string }>;
@@ -40,11 +37,14 @@ function formatProjectDate(value: Date) {
 export default async function ProjectPage({ params }: ProjectPageProps) {
   const { userId } = await getAuth();
   const { id } = await params;
-  const project = await getOwnedProject(id, userId!);
+  const projectData = await getProjectPageData(userId!, id);
 
-  if (!project) {
+  if (projectData.notFound) {
     notFound();
   }
+
+  const { issuesResult, project } = projectData;
+  const sandboxBaseAction = `/api/projects/${project.id}/sandbox`;
 
   return (
     <AppShell compactHeader description="" title="Project">
@@ -89,33 +89,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
             </p>
           </div>
         </section>
-
-        <Suspense fallback={<ProjectIssuesSectionSkeleton />}>
-          <ProjectIssuesSection
-            projectId={project.id}
-            repoName={project.repoName}
-            repoOwner={project.repoOwner}
-          />
-        </Suspense>
-      </div>
-    </AppShell>
-  );
-}
-
-async function ProjectIssuesSection({
-  projectId,
-  repoName,
-  repoOwner,
-}: {
-  projectId: string;
-  repoName: string;
-  repoOwner: string;
-}) {
-  const issuesResult = await fetchProjectOpenIssues(repoOwner, repoName);
-  const sandboxBaseAction = `/api/projects/${projectId}/sandbox`;
-
-  return (
-    <section className="space-y-6">
+        <section className="space-y-6">
       <div className="flex items-center justify-between border-b border-border pb-5">
         <div>
           <h2 className="text-lg font-bold uppercase tracking-tight">
@@ -179,7 +153,7 @@ async function ProjectIssuesSection({
 
       <IssueSandboxStatusPanel
         heartbeatAction={`${sandboxBaseAction}/heartbeat`}
-        projectId={projectId}
+        projectId={project.id}
         restartPreviewAction={`${sandboxBaseAction}/restart-preview`}
         sessionAction={`${sandboxBaseAction}/session`}
         startAction={`${sandboxBaseAction}/start`}
@@ -195,7 +169,7 @@ async function ProjectIssuesSection({
             >
               <Link
                 className="group flex-1 space-y-4"
-                href={`/projects/${projectId}/issues/${issue.number}`}
+                href={`/projects/${project.id}/issues/${issue.number}`}
               >
                 <div className="flex flex-wrap items-center gap-3">
                   <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/10 rounded-none text-[10px] font-bold uppercase tracking-widest">
@@ -228,7 +202,7 @@ async function ProjectIssuesSection({
                   asChild
                   className="h-10 rounded-none px-4 text-[10px] font-bold uppercase tracking-widest transition-transform group-hover/issue:-translate-y-px"
                 >
-                  <Link href={`/projects/${projectId}/issues/${issue.number}`}>
+                  <Link href={`/projects/${project.id}/issues/${issue.number}`}>
                     Open Issue Workspace
                   </Link>
                 </Button>
@@ -247,32 +221,8 @@ async function ProjectIssuesSection({
           ))}
         </div>
       ) : null}
-    </section>
-  );
-}
-
-function ProjectIssuesSectionSkeleton() {
-  return (
-    <section className="space-y-6">
-      <div className="flex items-center justify-between border-b border-border pb-5">
-        <Skeleton className="h-6 w-40 rounded-none" />
+        </section>
       </div>
-      <div className="grid gap-4">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div
-            className="space-y-4 border border-border bg-card p-6"
-            key={`project-issues-skeleton-${index}`}
-          >
-            <Skeleton className="h-4 w-16 rounded-none" />
-            <Skeleton className="h-5 w-2/3 rounded-none" />
-            <div className="flex flex-wrap gap-3">
-              <Skeleton className="h-4 w-24 rounded-none" />
-              <Skeleton className="h-4 w-24 rounded-none" />
-              <Skeleton className="h-4 w-28 rounded-none" />
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
+    </AppShell>
   );
 }
