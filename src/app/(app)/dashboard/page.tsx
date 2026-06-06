@@ -10,17 +10,14 @@ import { AppShell } from "~/components/app-shell";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { getAuth } from "~/server/auth/session";
-import { db } from "~/server/db";
 import { getGithubConnectionStatus } from "~/server/github/connection";
+import { listProjectsForUser } from "~/server/projects";
 
 export default async function DashboardPage() {
   const { userId } = await getAuth();
 
   const [projects, githubStatus] = await Promise.all([
-    db.project.findMany({
-      where: { userId: userId! },
-      orderBy: { createdAt: "desc" },
-    }),
+    listProjectsForUser(userId!),
     getGithubConnectionStatus(userId!),
   ]);
 

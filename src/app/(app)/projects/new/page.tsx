@@ -2,7 +2,6 @@ import { Github, ShieldCheck, ShieldAlert, ExternalLink, Database } from "lucide
 
 import { AppShell } from "~/components/app-shell";
 import { getAuth } from "~/server/auth/session";
-import { db } from "~/server/db";
 import { env } from "~/env";
 import { requireGithubConnection } from "~/server/github/guard";
 import { readGithubImportSession } from "~/server/github/import-session";
@@ -10,6 +9,7 @@ import {
   fetchGithubViewerLogin,
   fetchImportRepositories,
 } from "~/server/github/repos";
+import { listImportedProjectsForUser } from "~/server/projects";
 import { Button } from "~/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { RepositoryOwnerFilter } from "~/components/repository-owner-filter";
@@ -51,14 +51,7 @@ export default async function NewProjectPage({
 
   const params = await searchParams;
   const importSession = await readGithubImportSession();
-  const importedProjects = await db.project.findMany({
-    where: { userId: userId! },
-    select: {
-      id: true,
-      repoName: true,
-      repoOwner: true,
-    },
-  });
+  const importedProjects = await listImportedProjectsForUser(userId!);
 
   const importedProjectsRecord = Object.fromEntries(
     importedProjects.map((project) => [

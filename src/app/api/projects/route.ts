@@ -7,6 +7,7 @@ import { db } from "~/server/db";
 import { getGithubConnectionStatus } from "~/server/github/connection";
 import { readGithubImportSession } from "~/server/github/import-session";
 import { fetchImportRepositories } from "~/server/github/repos";
+import { listProjectsForUser } from "~/server/projects";
 
 function toErrorRedirect(url: URL, error: string) {
   const redirectUrl = new URL("/projects/new", url);
@@ -45,10 +46,7 @@ export async function GET() {
     return redirectToSignIn({ returnBackUrl: "/dashboard" });
   }
 
-  const projects = await db.project.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-  });
+  const projects = await listProjectsForUser(userId);
 
   return NextResponse.json({ projects });
 }
