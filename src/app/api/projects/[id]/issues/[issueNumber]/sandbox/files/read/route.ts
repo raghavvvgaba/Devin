@@ -9,7 +9,7 @@ import {
   validateIssueSandboxSession,
   withOwnedIssueSandboxRoute,
 } from "~/server/sandbox/route-helpers";
-import { sandboxProvider } from "~/server/sandbox/provider";
+import { readSandboxFile } from "~/server/sandbox/tools/read-file";
 
 export const runtime = "nodejs";
 
@@ -41,7 +41,7 @@ export async function POST(
 
     return respondWithSandboxToolAction(
       () =>
-        sandboxProvider.readFile({
+        readSandboxFile({
           endLine,
           path,
           sessionId,

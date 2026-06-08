@@ -1,5 +1,7 @@
 import "server-only";
 
+/** Defines which sandbox commands are allowed and normalizes command input. */
+
 export const ALLOWED_SANDBOX_COMMANDS = new Set(["git diff", "git diff -- .", "git status"]);
 
 export function normalizeSandboxCommand(command: string | null | undefined) {

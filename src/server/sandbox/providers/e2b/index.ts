@@ -1,7 +1,7 @@
 import "server-only";
 
-import { getSandboxDiff, runSandboxCommand } from "~/server/sandbox/providers/e2b/command-ops";
-import { readSandboxFile, listSandboxFiles, writeSandboxFile } from "~/server/sandbox/providers/e2b/file-ops";
+import { runRawSandboxCommand, runSandboxCommand } from "~/server/sandbox/providers/e2b/command-ops";
+import { readRawSandboxFile, listRawSandboxFiles, writeRawSandboxFile } from "~/server/sandbox/providers/e2b/file-ops";
 import {
   cleanupSandboxSession,
   lifecycleProviderMethods,
@@ -20,9 +20,9 @@ export type { SandboxListItem };
 
 export const e2bSandboxProvider: SandboxProvider = {
   ...lifecycleProviderMethods,
-  getDiff: getSandboxDiff,
-  listFiles: listSandboxFiles,
-  readFile: readSandboxFile,
   runCommand: runSandboxCommand,
-  writeFile: writeSandboxFile,
+  runRawCommand: runRawSandboxCommand,
+  listRawFiles: listRawSandboxFiles,
+  readRawFile: readRawSandboxFile,
+  writeRawFile: writeRawSandboxFile,
 };

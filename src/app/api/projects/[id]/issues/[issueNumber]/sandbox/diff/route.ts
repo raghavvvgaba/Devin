@@ -8,7 +8,7 @@ import {
   validateIssueSandboxSession,
   withOwnedIssueSandboxRoute,
 } from "~/server/sandbox/route-helpers";
-import { sandboxProvider } from "~/server/sandbox/provider";
+import { getSandboxDiff } from "~/server/sandbox/tools/diff";
 
 export const runtime = "nodejs";
 
@@ -30,7 +30,7 @@ export async function POST(
     }
 
     return respondWithSandboxToolAction(
-      () => sandboxProvider.getDiff({ sessionId }),
+      () => getSandboxDiff({ sessionId }),
       (diff) => sandboxJson({ ok: true as const, diff }),
       "Unable to get diff.",
     );

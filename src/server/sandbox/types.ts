@@ -67,6 +67,28 @@ export type SandboxFile = {
   truncated: boolean;
 };
 
+export type SandboxRawFileInput = {
+  path: string;
+  sessionId: string;
+};
+
+export type SandboxRawFile = {
+  content: string;
+  path: string;
+  size: number;
+};
+
+export type SandboxRawWriteFileInput = {
+  content: string;
+  path: string;
+  sessionId: string;
+};
+
+export type SandboxRawListFilesInput = {
+  path?: string;
+  sessionId: string;
+};
+
 export type SandboxFileEntry = {
   path: string;
   name: string;
@@ -82,14 +104,14 @@ export type SandboxCommandResult = {
 };
 
 export type SandboxProvider = {
-  getDiff: (input: SandboxDiffInput) => Promise<string>;
   get: (sessionId: string) => Promise<SandboxSession | null>;
   heartbeat: (sessionId: string) => Promise<SandboxSession | null>;
-  listFiles: (input: SandboxListFilesInput) => Promise<SandboxFileEntry[]>;
-  readFile: (input: SandboxFileInput) => Promise<SandboxFile>;
   restartPreview: (sessionId: string) => Promise<SandboxSession>;
   runCommand: (input: SandboxCommandInput) => Promise<SandboxCommandResult>;
+  runRawCommand: (input: SandboxCommandInput) => Promise<SandboxCommandResult>;
+  listRawFiles: (input: SandboxRawListFilesInput) => Promise<SandboxFileEntry[]>;
+  readRawFile: (input: SandboxRawFileInput) => Promise<SandboxRawFile>;
   start: (input: StartSandboxSessionInput) => Promise<SandboxSession>;
   stop: (input: StopSandboxSessionInput) => Promise<SandboxSession>;
-  writeFile: (input: SandboxWriteFileInput) => Promise<{ path: string; session: SandboxSession }>;
+  writeRawFile: (input: SandboxRawWriteFileInput) => Promise<{ path: string; session: SandboxSession }>;
 };

@@ -9,7 +9,7 @@ import {
   validateIssueSandboxSession,
   withOwnedIssueSandboxRoute,
 } from "~/server/sandbox/route-helpers";
-import { sandboxProvider } from "~/server/sandbox/provider";
+import { writeSandboxFile } from "~/server/sandbox/tools/write-file";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -38,7 +38,7 @@ export async function POST(
     }
 
     return respondWithSandboxToolAction(
-      () => sandboxProvider.writeFile({ content, path, sessionId }),
+      () => writeSandboxFile({ content, path, sessionId }),
       (result) =>
         sandboxJson({
           ok: true as const,

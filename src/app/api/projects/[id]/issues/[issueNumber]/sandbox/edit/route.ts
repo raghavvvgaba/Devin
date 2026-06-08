@@ -149,7 +149,6 @@ async function handlePrepareEdit(
 
   if (
     !(await verifyIssueSandboxAccess({
-      issueNumber: access.issueNumber,
       projectId: access.project.id,
       sessionId,
       userId: access.userId,

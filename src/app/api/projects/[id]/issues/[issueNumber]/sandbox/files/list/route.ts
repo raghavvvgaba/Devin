@@ -9,7 +9,7 @@ import {
   validateIssueSandboxSession,
   withOwnedIssueSandboxRoute,
 } from "~/server/sandbox/route-helpers";
-import { sandboxProvider } from "~/server/sandbox/provider";
+import { listSandboxFiles } from "~/server/sandbox/tools/list-directory";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ export async function POST(
     }
 
     return respondWithSandboxToolAction(
-      () => sandboxProvider.listFiles({ path, sessionId }),
+      () => listSandboxFiles({ path, sessionId }),
       (entries) => sandboxJson({ ok: true as const, entries }),
       "Unable to list files.",
     );

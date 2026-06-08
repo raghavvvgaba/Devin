@@ -1,7 +1,9 @@
 import "server-only";
 
 import { generateSingleFileEdit } from "~/server/ai/single-file-edit";
-import { sandboxProvider } from "~/server/sandbox/provider";
+import { getSandboxDiff } from "~/server/sandbox/tools/diff";
+import { readSandboxFile } from "~/server/sandbox/tools/read-file";
+import { writeSandboxFile } from "~/server/sandbox/tools/write-file";
 import type { SandboxSession } from "~/server/sandbox/types";
 
 export type PreparedSandboxEdit =
@@ -67,11 +69,11 @@ export async function prepareSandboxSingleFileAiEdit(
   input: PrepareSandboxSingleFileAiEditInput,
 ): Promise<PreparedSandboxEdit> {
   let file: Awaited<
-    ReturnType<typeof sandboxProvider.readFile>
+    ReturnType<typeof readSandboxFile>
   >;
 
   try {
-    file = await sandboxProvider.readFile({
+    file = await readSandboxFile({
       endLine: -1,
       path: input.filePath,
       sessionId: input.sessionId,
@@ -95,11 +97,11 @@ export async function prepareSandboxSingleFileAiEdit(
   }
 
   let writeResult: Awaited<
-    ReturnType<typeof sandboxProvider.writeFile>
+    ReturnType<typeof writeSandboxFile>
   >;
 
   try {
-    writeResult = await sandboxProvider.writeFile({
+    writeResult = await writeSandboxFile({
       content: aiEdit.updatedContent,
       path: file.path,
       sessionId: input.sessionId,
@@ -111,7 +113,7 @@ export async function prepareSandboxSingleFileAiEdit(
   let diff = "";
 
   try {
-    diff = await sandboxProvider.getDiff({ sessionId: input.sessionId });
+    diff = await getSandboxDiff({ sessionId: input.sessionId });
   } catch {
     diff = "";
   }

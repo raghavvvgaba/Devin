@@ -3,19 +3,17 @@ import { getRunningSandboxToolSession } from "~/server/sandbox/providers/e2b/lif
 import {
   appendLog,
 } from "~/server/sandbox/providers/e2b/session-state";
-import { SANDBOX_DIFF_COMMAND } from "~/server/sandbox/tools/diff";
 import { normalizeSandboxCommand } from "~/server/sandbox/tools/commands";
 import type {
   SandboxCommandInput,
   SandboxCommandResult,
-  SandboxDiffInput,
 } from "~/server/sandbox/types";
 
-export async function runSandboxCommand(
+export async function runRawSandboxCommand(
   input: SandboxCommandInput,
 ): Promise<SandboxCommandResult> {
   const session = await getRunningSandboxToolSession(input.sessionId);
-  const command = normalizeSandboxCommand(input.command);
+  const command = input.command;
 
   appendLog(session, `\n$ ${command}\n`);
 
@@ -66,11 +64,11 @@ export async function runSandboxCommand(
   }
 }
 
-export async function getSandboxDiff(input: SandboxDiffInput) {
-  const result = await runSandboxCommand({
-    command: SANDBOX_DIFF_COMMAND,
-    sessionId: input.sessionId,
+export async function runSandboxCommand(
+  input: SandboxCommandInput,
+): Promise<SandboxCommandResult> {
+  return runRawSandboxCommand({
+    ...input,
+    command: normalizeSandboxCommand(input.command),
   });
-
-  return result.stdout;
 }

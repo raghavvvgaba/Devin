@@ -1,5 +1,7 @@
 import "server-only";
 
+/** Stores and retrieves persisted sandbox session records in the database. */
+
 import { db } from "~/server/db";
 import type { SandboxSession as PublicSandboxSession } from "~/server/sandbox/types";
 
@@ -7,6 +9,7 @@ type PersistedSandboxSession = Awaited<
   ReturnType<typeof db.sandboxSession.findUnique>
 >;
 
+/** Converts a persisted record into the stopped public session shape. */
 function toStoppedPublicSession(
   session: NonNullable<PersistedSandboxSession>,
 ): PublicSandboxSession {
@@ -23,6 +26,7 @@ function toStoppedPublicSession(
   };
 }
 
+/** Finds the sandbox session record attached to a project. */
 export async function getSandboxSessionRecordByProjectId(projectId: string) {
   return db.sandboxSession.findUnique({
     where: {
@@ -31,6 +35,7 @@ export async function getSandboxSessionRecordByProjectId(projectId: string) {
   });
 }
 
+/** Finds a sandbox session record by session id. */
 export async function getSandboxSessionRecordBySessionId(sessionId: string) {
   return db.sandboxSession.findUnique({
     where: {
@@ -39,6 +44,7 @@ export async function getSandboxSessionRecordBySessionId(sessionId: string) {
   });
 }
 
+/** Replaces any existing project session with a newly created sandbox session record. */
 export async function createSandboxSessionRecord(input: {
   lastHeartbeatAt: Date;
   previewUrl: string;
@@ -48,27 +54,32 @@ export async function createSandboxSessionRecord(input: {
   startedAt: Date;
   userId: string;
 }) {
-  return db.$transaction(async (tx) => {
-    await tx.sandboxSession.deleteMany({
-      where: {
-        projectId: input.projectId,
-      },
-    });
-
-    return tx.sandboxSession.create({
-      data: {
-        lastHeartbeatAt: input.lastHeartbeatAt,
-        previewUrl: input.previewUrl,
-        projectId: input.projectId,
-        sandboxId: input.sandboxId,
-        sessionId: input.sessionId,
-        startedAt: input.startedAt,
-        userId: input.userId,
-      },
-    });
+  return db.sandboxSession.upsert({
+    create: {
+      lastHeartbeatAt: input.lastHeartbeatAt,
+      previewUrl: input.previewUrl,
+      projectId: input.projectId,
+      sandboxId: input.sandboxId,
+      sessionId: input.sessionId,
+      startedAt: input.startedAt,
+      userId: input.userId,
+    },
+    update: {
+      isStopped: false,
+      lastHeartbeatAt: input.lastHeartbeatAt,
+      previewUrl: input.previewUrl,
+      sandboxId: input.sandboxId,
+      sessionId: input.sessionId,
+      startedAt: input.startedAt,
+      userId: input.userId,
+    },
+    where: {
+      projectId: input.projectId,
+    },
   });
 }
 
+/** Deletes sandbox session records for the given session id. */
 export async function deleteSandboxSessionRecord(sessionId: string) {
   await db.sandboxSession.deleteMany({
     where: {
@@ -77,6 +88,7 @@ export async function deleteSandboxSessionRecord(sessionId: string) {
   });
 }
 
+/** Marks a sandbox session as stopped without deleting the record. */
 export async function markSandboxSessionStopped(sessionId: string) {
   return db.sandboxSession.updateMany({
     data: {
@@ -88,6 +100,7 @@ export async function markSandboxSessionStopped(sessionId: string) {
   });
 }
 
+/** Marks sandbox sessions as stopped by sandbox id. */
 export async function markSandboxSessionStoppedBySandboxId(sandboxId: string) {
   return db.sandboxSession.updateMany({
     data: {
@@ -99,6 +112,7 @@ export async function markSandboxSessionStoppedBySandboxId(sandboxId: string) {
   });
 }
 
+/** Updates the last heartbeat timestamp and marks the session active. */
 export async function touchSandboxSessionHeartbeat(
   sessionId: string,
   lastHeartbeatAt: Date,
@@ -114,36 +128,45 @@ export async function touchSandboxSessionHeartbeat(
   });
 }
 
+/** Checks whether a user owns the requested project sandbox session. */
 export async function canAccessProjectSandboxSession(input: {
   projectId: string;
   sessionId: string;
   userId: string;
 }) {
-  const session = await db.sandboxSession.findFirst({
+  const session = await db.sandboxSession.findUnique({
     select: {
       sessionId: true,
+      userId: true,
     },
     where: {
       projectId: input.projectId,
-      sessionId: input.sessionId,
-      userId: input.userId,
     },
   });
 
-  return Boolean(session);
+  return Boolean(
+    session &&
+      session.sessionId === input.sessionId &&
+      session.userId === input.userId,
+  );
 }
 
+/** Returns the active reusable sandbox session for a project, if one exists. */
 export async function getReusableProjectSandboxSession(input: {
   projectId: string;
   userId: string;
 }) {
-  return db.sandboxSession.findFirst({
+  const session = await db.sandboxSession.findUnique({
     where: {
-      isStopped: false,
       projectId: input.projectId,
-      userId: input.userId,
     },
   });
+
+  if (!session || session.userId !== input.userId || session.isStopped) {
+    return null;
+  }
+
+  return session;
 }
 
 export { toStoppedPublicSession };

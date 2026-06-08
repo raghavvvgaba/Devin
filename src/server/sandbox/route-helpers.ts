@@ -4,10 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 import { getOwnedProject } from "~/server/projects";
-import {
-  canAccessIssueSandbox,
-  canAccessProjectSandbox,
-} from "~/server/sandbox/ownership";
+import { canAccessProjectSandbox } from "~/server/sandbox/ownership";
 
 export type IssueSandboxRouteContext = {
   params: Promise<{ id: string; issueNumber: string }>;
@@ -174,13 +171,11 @@ export function readRequiredStringValue(
 }
 
 export async function verifyIssueSandboxAccess(input: {
-  issueNumber: number;
   projectId: string;
   sessionId: string;
   userId: string;
 }) {
-  return canAccessIssueSandbox(input.sessionId, {
-    issueNumber: input.issueNumber,
+  return canAccessProjectSandbox(input.sessionId, {
     projectId: input.projectId,
     userId: input.userId,
   });
@@ -244,7 +239,6 @@ export async function validateIssueSandboxSession(
 
   if (
     !(await verifyIssueSandboxAccess({
-      issueNumber: access.issueNumber,
       projectId: access.project.id,
       sessionId,
       userId: access.userId,
