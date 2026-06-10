@@ -48,6 +48,12 @@ export type SandboxListFilesInput = {
   sessionId: string;
 };
 
+export type SandboxSearchInput = {
+  path?: string;
+  query: string;
+  sessionId: string;
+};
+
 export type SandboxCommandInput = {
   command: string;
   sessionId: string;
@@ -94,6 +100,22 @@ export type SandboxFileEntry = {
   name: string;
   type: "file" | "dir" | "unknown";
   size?: number;
+};
+
+export type SandboxSearchMatch = {
+  column: number;
+  line: number;
+  path: string;
+  text: string;
+};
+
+export type SandboxSearchResult = {
+  caps: {
+    perFile: number;
+    total: number;
+  };
+  matches: SandboxSearchMatch[];
+  truncated: boolean;
 };
 
 export type SandboxCommandResult = {

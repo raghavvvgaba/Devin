@@ -119,6 +119,13 @@ For a human-readable walkthrough of the models and why they exist, see [docs/dat
 
 For the overall app structure, API layout, and sandbox lifecycle, see [docs/architecture.md](docs/architecture.md).
 
+## Tool Contracts
+
+Canonical developer-facing tool contracts live in [docs/tools.md](docs/tools.md).
+
+- [docs/tools.md](docs/tools.md)
+  Canonical contracts for sandbox tools, including `search_code`.
+
 ## Troubleshooting
 
 - `pnpm build` is more trustworthy than `pnpm typecheck` when `.next/types` is stale.

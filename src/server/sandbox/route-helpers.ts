@@ -43,6 +43,7 @@ export function sandboxToolError(error: unknown, fallback: string) {
     "invalid_path",
     "invalid_line_range",
     "missing_path",
+    "missing_query",
   ]);
 
   return sandboxError(message, badRequestErrors.has(message) ? 400 : 500);
