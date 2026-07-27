@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Unlink } from "lucide-react";
+import { useFormStatus } from "react-dom";
+import { AlertTriangle, LoaderCircle, Unlink } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
 import {
@@ -18,6 +19,35 @@ type GithubDisconnectDialogProps = {
   githubUsername: string;
   projectCount: number;
 };
+
+function DisconnectSubmitButton({
+  projectCount,
+  projectLabel,
+}: {
+  projectCount: number;
+  projectLabel: string;
+}) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button
+      aria-disabled={pending}
+      className="w-full rounded-none"
+      disabled={pending}
+      type="submit"
+      variant="destructive"
+    >
+      {pending ? (
+        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+      ) : (
+        <Unlink className="mr-2 h-4 w-4" />
+      )}
+      {pending
+        ? "Disconnecting…"
+        : `Disconnect and delete ${projectCount} ${projectLabel}`}
+    </Button>
+  );
+}
 
 export function GithubDisconnectDialog({
   githubUsername,
@@ -67,14 +97,10 @@ export function GithubDisconnectDialog({
             className="w-full sm:w-auto"
             method="post"
           >
-            <Button
-              className="w-full rounded-none"
-              type="submit"
-              variant="destructive"
-            >
-              <Unlink className="mr-2 h-4 w-4" />
-              Disconnect and delete {projectCount} {projectLabel}
-            </Button>
+            <DisconnectSubmitButton
+              projectCount={projectCount}
+              projectLabel={projectLabel}
+            />
           </form>
         </DialogFooter>
       </DialogContent>
