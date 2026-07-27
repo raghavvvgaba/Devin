@@ -90,6 +90,34 @@ export function ChatInputBox({
 
       <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
         <div className="flex items-center gap-2">
+          <div
+            aria-label="Agent mode"
+            className="flex h-6 items-center border border-border bg-muted/40 p-0.5"
+            role="group"
+          >
+            {(["plan", "build"] as const).map((agentMode) => {
+              const selected = mode === agentMode;
+              const Icon = agentMode === "plan" ? ListTree : Hammer;
+
+              return (
+                <button
+                  key={agentMode}
+                  aria-pressed={selected}
+                  className={cn(
+                    "flex h-5 items-center gap-1 px-2 text-[10px] font-medium capitalize text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    selected && "bg-background text-foreground shadow-sm",
+                  )}
+                  disabled={accessBlocked || isPreparing}
+                  onClick={() => onModeChange(agentMode)}
+                  type="button"
+                >
+                  <Icon className="size-3" />
+                  {agentMode}
+                </button>
+              );
+            })}
+          </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -137,34 +165,6 @@ export function ChatInputBox({
               })}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <div
-            aria-label="Agent mode"
-            className="flex h-6 items-center border border-border bg-muted/40 p-0.5"
-            role="group"
-          >
-            {(["plan", "build"] as const).map((agentMode) => {
-              const selected = mode === agentMode;
-              const Icon = agentMode === "plan" ? ListTree : Hammer;
-
-              return (
-                <button
-                  key={agentMode}
-                  aria-pressed={selected}
-                  className={cn(
-                    "flex h-5 items-center gap-1 px-2 text-[10px] font-medium capitalize text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                    selected && "bg-background text-foreground shadow-sm",
-                  )}
-                  disabled={accessBlocked || isPreparing}
-                  onClick={() => onModeChange(agentMode)}
-                  type="button"
-                >
-                  <Icon className="size-3" />
-                  {agentMode}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <Button

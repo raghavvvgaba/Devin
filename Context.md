@@ -131,7 +131,7 @@ This is intentionally not modeled as durable database state yet. It may be repla
 | Database | Neon Postgres |
 | ORM | Prisma |
 | GitHub integration | GitHub App |
-| AI edit generation | OpenCode Go (default) or OpenRouter via `AI_PROVIDER` |
+| AI edit generation | OpenRouter, with issue-workspace model selection |
 
 ### Why This Stack
 

@@ -47,7 +47,7 @@ export default async function ProjectIssuePage({
   const agentAction = `${sandboxBaseAction}/agent`;
   const clearChatAction = `/api/projects/${project.id}/issues/${issueNumber}/chat`;
   const submitAction = `${sandboxBaseAction}/submit`;
-  const modelPickerEnabled = env.AI_PROVIDER === "opencode-go";
+  const modelPickerEnabled = env.AI_PROVIDER === "openrouter";
 
   return (
     <IssueWorkspaceLayout

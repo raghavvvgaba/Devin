@@ -20,7 +20,7 @@ export const env = createEnv({
     OPENROUTER_MODEL: z.string().min(1).optional(),
     OPENCODE_API_KEY: z.string().min(1).optional(),
     OPENCODE_GO_MODEL: z.string().min(1).optional(),
-    AI_PROVIDER: z.enum(["openrouter", "opencode-go"]).default("opencode-go"),
+    AI_PROVIDER: z.enum(["openrouter", "opencode-go"]).default("openrouter"),
     E2B_API_KEY: z.string().min(1).optional(),
     E2B_SANDBOX_TEMPLATE: z
       .string()

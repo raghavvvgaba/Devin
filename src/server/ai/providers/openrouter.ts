@@ -1,6 +1,7 @@
 import "server-only";
 
 import { env } from "~/env";
+import { toOpenRouterModelId } from "~/lib/agent-models";
 import type {
   AIGenerateTextInput,
   AIGenerateTextResult,
@@ -110,7 +111,8 @@ function getUsage(response: OpenRouterResponse): AIUsage | undefined {
 }
 
 function getOpenRouterModel(modelOverride?: string) {
-  return modelOverride ?? env.OPENROUTER_MODEL;
+  const model = modelOverride ?? env.OPENROUTER_MODEL;
+  return model ? toOpenRouterModelId(model) : undefined;
 }
 
 async function generateText(
