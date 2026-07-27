@@ -489,17 +489,17 @@ export function IssueChatWorkspace({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {issueTitle ? (
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#171713]/10 bg-[#fffaf0]/45 px-4 py-4 dark:border-[#fffaf0]/10 dark:bg-white/[0.02]">
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 shrink-0 rounded-none text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="h-7 w-7 shrink-0 rounded-none text-[#6d675d] hover:bg-[#f04f2f] hover:text-white dark:text-[#aaa69d]"
               onClick={() => setIsOpen(false)}
             >
               <PanelLeftClose className="h-3.5 w-3.5" />
             </Button>
-            <h1 className="min-w-0 flex-1 text-sm font-bold uppercase tracking-tight line-clamp-2">
+            <h1 className="inlaya-display min-w-0 flex-1 text-lg font-medium leading-tight tracking-[-0.025em] line-clamp-2">
               {issueTitle}
             </h1>
           </div>
@@ -509,7 +509,7 @@ export function IssueChatWorkspace({
               onOpenChange={setIsClearChatDialogOpen}
             >
               <Button
-                className="h-6 rounded-none px-2 text-[10px] font-medium"
+                className="h-7 rounded-none px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
                 disabled={!canClearChat}
                 onClick={() => setIsClearChatDialogOpen(true)}
                 type="button"
@@ -523,7 +523,7 @@ export function IssueChatWorkspace({
                 Clear chat
               </Button>
               <DialogContent
-                className="rounded-none border-border"
+                className="inlaya-landing rounded-none border-[#171713]/25 bg-[#f3efe5] text-[#171713] shadow-[10px_10px_0_rgba(240,79,47,0.2)] dark:border-[#fffaf0]/20 dark:bg-[#11110f] dark:text-[#f3efe5]"
                 showCloseButton={false}
               >
                 <DialogHeader>
@@ -564,7 +564,7 @@ export function IssueChatWorkspace({
             {pullRequestUrl ? (
               <Button
                 asChild
-                className="h-6 rounded-none border-border bg-transparent px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="h-7 rounded-none border-[#171713]/20 bg-transparent px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#6d675d] hover:border-[#f04f2f] hover:bg-[#f04f2f]/10 hover:text-[#171713] dark:border-[#fffaf0]/20 dark:text-[#aaa69d] dark:hover:text-[#fffaf0]"
                 variant="outline"
               >
                 <a href={pullRequestUrl} rel="noreferrer" target="_blank">
@@ -574,7 +574,7 @@ export function IssueChatWorkspace({
               </Button>
             ) : null}
             <Button
-              className="h-6 rounded-none px-2 text-[10px] font-medium"
+              className="h-7 rounded-none bg-[#171713] px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#fffaf0] hover:bg-[#f04f2f] dark:bg-[#fffaf0] dark:text-[#171713] dark:hover:bg-[#f04f2f] dark:hover:text-white"
               disabled={accessBlocked || isRunning || isSubmitting}
               onClick={handleSubmitChanges}
               type="button"
@@ -591,7 +591,7 @@ export function IssueChatWorkspace({
       ) : null}
 
       <AIChat
-        className="flex min-h-0 flex-1 flex-col border-x-0 border-b-0"
+        className="flex min-h-0 flex-1 flex-col border-x-0 border-b-0 border-t-0"
         fullBleed
         messages={messages}
       >

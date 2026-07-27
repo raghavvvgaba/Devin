@@ -67,9 +67,9 @@ export function IssuePreviewPane({
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-muted/20">
+    <div className="flex min-w-0 flex-1 flex-col bg-[#f3efe5] text-[#171713] dark:bg-[#201f1a] dark:text-[#fffaf0]">
       {/* Status Panel Header */}
-      <header className="flex h-14 shrink-0 items-center border-b border-border bg-background px-4">
+      <header className="relative flex h-14 shrink-0 items-center border-b border-[#171713]/15 bg-[#fffaf0]/75 px-4 after:absolute after:bottom-[-1px] after:left-4 after:h-px after:w-14 after:bg-[#f04f2f] dark:border-white/10 dark:bg-[#171713]">
         <IssueSandboxStatusPanel
           checkPreviewAction={checkPreviewAction}
           heartbeatAction={heartbeatAction}
@@ -86,13 +86,13 @@ export function IssuePreviewPane({
       {previewUrl ? (
         <div className="flex flex-1 flex-col min-h-0">
           {/* Browser Chrome */}
-          <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border bg-background/80 px-3">
+          <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-[#171713]/15 bg-[#fffaf0]/75 px-3 dark:border-white/10 dark:bg-[#171713]">
             {/* Navigation buttons */}
             <div className="flex items-center gap-0.5">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 text-[#8f8b82] hover:bg-[#171713]/5 hover:text-[#171713] dark:text-[#817e75] dark:hover:bg-white/5 dark:hover:text-[#fffaf0]"
                 disabled
                 type="button"
               >
@@ -101,7 +101,7 @@ export function IssuePreviewPane({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 text-[#8f8b82] hover:bg-[#171713]/5 hover:text-[#171713] dark:text-[#817e75] dark:hover:bg-white/5 dark:hover:text-[#fffaf0]"
                 disabled
                 type="button"
               >
@@ -110,7 +110,7 @@ export function IssuePreviewPane({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 text-[#6d675d] hover:bg-[#f04f2f] hover:text-white dark:text-[#aaa69d]"
                 onClick={handleRefreshPreview}
                 type="button"
               >
@@ -119,9 +119,9 @@ export function IssuePreviewPane({
             </div>
 
             {/* Address bar */}
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-border bg-muted/50 px-2.5 py-1">
-              <Globe className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="truncate font-mono text-[11px] text-muted-foreground select-all">
+            <div className="flex min-w-0 flex-1 items-center gap-2 border border-[#171713]/15 bg-[#f3efe5]/70 px-2.5 py-1 dark:border-white/10 dark:bg-white/[0.04]">
+              <Globe className="h-3 w-3 shrink-0 text-[#f04f2f]" />
+              <span className="truncate font-mono text-[11px] text-[#6d675d] select-all dark:text-[#aaa69d]">
                 {previewUrl}
               </span>
             </div>
@@ -130,7 +130,7 @@ export function IssuePreviewPane({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="h-7 w-7 text-[#6d675d] hover:bg-[#171713]/5 hover:text-[#171713] dark:text-[#aaa69d] dark:hover:bg-white/5 dark:hover:text-[#fffaf0]"
               onClick={handleCopyPreviewLink}
               type="button"
             >
@@ -143,7 +143,7 @@ export function IssuePreviewPane({
               asChild
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="h-7 w-7 text-[#6d675d] hover:bg-[#171713]/5 hover:text-[#171713] dark:text-[#aaa69d] dark:hover:bg-white/5 dark:hover:text-[#fffaf0]"
             >
               <a href={previewUrl} rel="noreferrer" target="_blank">
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -165,12 +165,13 @@ export function IssuePreviewPane({
           </div>
         </div>
       ) : isPreparingPreview ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
-            <LoaderCircle className="h-6 w-6 animate-spin" />
+        <div className="relative flex flex-1 items-center justify-center overflow-hidden">
+          <div className="absolute h-64 w-64 rotate-45 border border-[#171713]/[0.07] dark:border-white/[0.06]" />
+          <div className="relative flex flex-col items-center gap-4 text-center text-[#6d675d] dark:text-[#aaa69d]">
+            <LoaderCircle className="h-7 w-7 animate-spin text-[#f04f2f]" />
             <div>
-              <p className="text-sm font-medium text-foreground">Sandbox is running</p>
-              <p className="mt-0.5 text-xs text-muted-foreground/70">
+              <p className="text-sm font-semibold text-[#171713] dark:text-[#fffaf0]">Sandbox is running</p>
+              <p className="mt-1 text-xs text-[#777167] dark:text-[#817e75]">
                 {previewStatusMessage ?? "Preparing the preview..."}
               </p>
             </div>
@@ -178,17 +179,18 @@ export function IssuePreviewPane({
         </div>
       ) : (
         /* Empty state - no preview URL */
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
+        <div className="relative flex flex-1 items-center justify-center overflow-hidden">
+          <div className="absolute h-72 w-72 rotate-45 border border-[#171713]/[0.07] dark:border-white/[0.06]" />
+          <div className="relative flex flex-col items-center gap-4 text-center text-[#6d675d] dark:text-[#aaa69d]">
             <div className={cn(
-              "flex h-12 w-12 items-center justify-center rounded-xl",
-              "border border-dashed border-muted-foreground/25 bg-muted/30"
+              "flex h-14 w-14 items-center justify-center",
+              "border border-[#f04f2f]/35 bg-[#f04f2f]/10"
             )}>
-              <Monitor className="h-5 w-5 text-muted-foreground/50" />
+              <Monitor className="h-5 w-5 text-[#f04f2f]" />
             </div>
             <div>
-              <p className="text-sm font-medium">No preview available</p>
-              <p className="mt-0.5 text-xs text-muted-foreground/70">
+              <p className="text-sm font-semibold text-[#171713] dark:text-[#fffaf0]">No preview available</p>
+              <p className="mt-1 text-xs text-[#777167] dark:text-[#817e75]">
                 Start the sandbox to see a live preview here.
               </p>
             </div>

@@ -168,6 +168,54 @@
     linear-gradient(90deg, rgba(255, 250, 240, 0.04) 1px, transparent 1px);
 }
 
+.inlaya-workspace {
+  --background: #f3efe5;
+  --foreground: #171713;
+  --card: #fffaf0;
+  --card-foreground: #171713;
+  --popover: #fffaf0;
+  --popover-foreground: #171713;
+  --primary: #171713;
+  --primary-foreground: #fffaf0;
+  --secondary: #e9e3d6;
+  --secondary-foreground: #171713;
+  --muted: #e8e2d5;
+  --muted-foreground: #6d675d;
+  --accent: #f04f2f;
+  --accent-foreground: #fffaf0;
+  --border: rgba(23, 23, 19, 0.16);
+  --input: rgba(23, 23, 19, 0.2);
+  --ring: #f04f2f;
+  font-family: "Avenir Next", "Century Gothic", Futura, sans-serif;
+  background-image:
+    linear-gradient(rgba(23, 23, 19, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 23, 19, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.dark .inlaya-workspace {
+  --background: #11110f;
+  --foreground: #f3efe5;
+  --card: #171713;
+  --card-foreground: #f3efe5;
+  --popover: #201f1a;
+  --popover-foreground: #f3efe5;
+  --primary: #fffaf0;
+  --primary-foreground: #171713;
+  --secondary: #292821;
+  --secondary-foreground: #f3efe5;
+  --muted: #292821;
+  --muted-foreground: #aaa69d;
+  --accent: #f04f2f;
+  --accent-foreground: #fffaf0;
+  --border: rgba(255, 250, 240, 0.14);
+  --input: rgba(255, 250, 240, 0.18);
+  --ring: #f04f2f;
+  background-image:
+    linear-gradient(rgba(255, 250, 240, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 250, 240, 0.035) 1px, transparent 1px);
+}
+
 .inlaya-display {
   font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
 }

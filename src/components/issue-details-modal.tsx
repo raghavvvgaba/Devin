@@ -56,7 +56,7 @@ export function IssueDetailsModal({
         <Button
           size="sm"
           variant="outline"
-          className="rounded-none border-border px-4 text-[10px] font-bold uppercase tracking-[0.22em]"
+          className="rounded-none border-[#171713]/20 bg-transparent px-4 text-[10px] font-bold uppercase tracking-[0.22em] text-[#171713] hover:border-[#f04f2f] hover:bg-[#f04f2f]/10 dark:border-[#fffaf0]/20 dark:text-[#fffaf0]"
         >
           <FileText className="h-3.5 w-3.5" />
           View Issue
@@ -65,15 +65,15 @@ export function IssueDetailsModal({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="!inset-y-auto !right-auto !left-1/2 !top-1/2 !h-auto !w-[min(46rem,calc(100vw-2rem))] !max-w-none !-translate-x-1/2 !-translate-y-1/2 rounded-none border border-border bg-background p-0"
+        className="inlaya-landing !inset-y-auto !right-auto !left-1/2 !top-1/2 !h-auto !w-[min(46rem,calc(100vw-2rem))] !max-w-none !-translate-x-1/2 !-translate-y-1/2 rounded-none border border-[#171713]/25 bg-[#f3efe5] p-0 text-[#171713] shadow-[14px_14px_0_rgba(240,79,47,0.24)] dark:border-[#fffaf0]/20 dark:bg-[#11110f] dark:text-[#f3efe5]"
       >
-        <SheetHeader className="border-b border-border px-6 py-5">
+        <SheetHeader className="relative border-b border-[#171713]/15 px-6 py-5 dark:border-[#fffaf0]/15 after:absolute after:bottom-[-1px] after:left-6 after:h-px after:w-14 after:bg-[#f04f2f]">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-1.5">
               <SheetDescription className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 Issue #{issueNumber}
               </SheetDescription>
-              <SheetTitle className="text-xl font-bold uppercase tracking-tight">
+              <SheetTitle className="inlaya-display text-2xl font-medium tracking-[-0.03em] text-[#171713] dark:text-[#f3efe5]">
                 {title}
               </SheetTitle>
             </div>
@@ -143,7 +143,7 @@ export function IssueDetailsModal({
             ) : null}
           </div>
 
-          <div className="rounded-none border border-border bg-muted/30 px-5 py-4">
+          <div className="rounded-none border border-[#171713]/15 bg-[#fffaf0]/60 px-5 py-4 dark:border-[#fffaf0]/15 dark:bg-white/[0.035]">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
               Issue Details
             </p>

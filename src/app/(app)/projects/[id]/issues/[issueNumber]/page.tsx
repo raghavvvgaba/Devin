@@ -54,11 +54,12 @@ export default async function ProjectIssuePage({
       sidebar={
         <>
           {/* Header */}
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3">
+          <header className="relative flex h-14 shrink-0 items-center justify-between border-b border-[#171713]/15 bg-[#f3efe5]/70 px-3 dark:border-[#fffaf0]/15 dark:bg-[#11110f]/70">
+            <span className="absolute bottom-[-1px] left-3 h-px w-12 bg-[#f04f2f]" />
             <Button
               asChild
               variant="ghost"
-              className="h-8 px-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+              className="h-8 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6d675d] hover:bg-[#171713]/5 hover:text-[#171713] dark:text-[#aaa69d] dark:hover:bg-white/5 dark:hover:text-[#fffaf0]"
             >
               <Link href={`/projects/${project.id}`}>
                 <ChevronLeft className="mr-1 h-3.5 w-3.5" />

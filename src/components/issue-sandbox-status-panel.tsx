@@ -100,11 +100,11 @@ const statusCopy: Record<SandboxStatus, string> = {
 };
 
 const statusStyles: Record<SandboxStatus, string> = {
-  starting: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-100",
-  installing: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-100",
-  running: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-100",
-  stopped: "border-border bg-muted text-muted-foreground",
-  error: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-100",
+  starting: "border-cyan-600/25 bg-cyan-600/10 text-cyan-700 dark:border-cyan-300/30 dark:bg-cyan-300/10 dark:text-cyan-200",
+  installing: "border-blue-600/25 bg-blue-600/10 text-blue-700 dark:border-blue-300/30 dark:bg-blue-300/10 dark:text-blue-200",
+  running: "border-emerald-600/25 bg-emerald-600/10 text-emerald-700 dark:border-emerald-300/30 dark:bg-emerald-300/10 dark:text-emerald-200",
+  stopped: "border-[#171713]/20 bg-[#171713]/[0.035] text-[#6d675d] dark:border-white/15 dark:bg-white/[0.05] dark:text-[#aaa69d]",
+  error: "border-red-600/25 bg-red-600/10 text-red-700 dark:border-red-300/30 dark:bg-red-300/10 dark:text-red-200",
 };
 
 function getErrorMessage(error: unknown) {
@@ -484,7 +484,7 @@ export function IssueSandboxStatusPanel({
   }
 
   return (
-    <div className="flex w-full items-center justify-between gap-4">
+    <div className="flex w-full items-center justify-between gap-4 text-[#171713] dark:text-[#fffaf0]">
       {/* Left side: Status and Real-time message */}
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span
@@ -498,11 +498,11 @@ export function IssueSandboxStatusPanel({
         
         {/* Ticker / Current Message */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <p className="truncate text-xs font-medium text-foreground">
+          <p className="truncate text-xs font-medium text-[#171713] dark:text-[#fffaf0]">
             {displayMessage}
           </p>
           {session?.previewUrl && canOpenPreview ? (
-            <p className="truncate font-mono text-[10px] text-muted-foreground">
+            <p className="truncate font-mono text-[10px] text-[#777167] dark:text-[#817e75]">
               {session.previewUrl}
             </p>
           ) : error ? (
@@ -510,7 +510,7 @@ export function IssueSandboxStatusPanel({
               {error}
             </p>
           ) : (session?.logs && session.logs.length > 0) ? (
-            <p className="truncate font-mono text-[10px] text-muted-foreground">
+            <p className="truncate font-mono text-[10px] text-[#777167] dark:text-[#817e75]">
               {session.logs[session.logs.length - 1]?.trim() || "Waiting for logs..."}
             </p>
           ) : null}
@@ -548,7 +548,7 @@ export function IssueSandboxStatusPanel({
 
         {canStart ? (
           <Button
-            className="h-8 rounded-none text-xs"
+            className="h-8 rounded-none bg-[#171713] text-xs font-semibold text-[#fffaf0] hover:bg-[#f04f2f] hover:text-white dark:bg-[#fffaf0] dark:text-[#171713]"
             disabled={isStarting}
             onClick={handleStart}
             size="sm"
@@ -691,7 +691,9 @@ export function IssueSandboxStatusPanel({
             </Button>
           </>
         ) : null}
-        <ModeToggle />
+        <div className="border-l border-[#171713]/10 pl-2 dark:border-white/10 [&_button]:text-[#6d675d] dark:[&_button]:text-[#aaa69d] [&_button:hover]:bg-[#171713]/5 dark:[&_button:hover]:bg-white/5 [&_button:hover]:text-[#171713] dark:[&_button:hover]:text-[#fffaf0]">
+          <ModeToggle />
+        </div>
       </div>
     </div>
   );

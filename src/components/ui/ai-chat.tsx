@@ -90,11 +90,11 @@ export function AIChat({
   return (
     <section
       className={cn(
-        "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-none border border-border bg-background dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_28%),linear-gradient(180deg,_rgba(12,12,14,0.98),_rgba(6,6,8,1))] shadow-sm dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]",
+        "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-none border border-border bg-background shadow-none",
         className,
       )}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:24px_24px] opacity-100 dark:opacity-[0.06]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(23,23,19,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(23,23,19,0.03)_1px,transparent_1px)] bg-[size:24px_24px] dark:bg-[linear-gradient(rgba(255,250,240,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,250,240,0.025)_1px,transparent_1px)]" />
 
       <div
         ref={scrollAreaRef}
@@ -122,7 +122,7 @@ export function AIChat({
                   className={cn(
                     "max-w-[min(42rem,92%)]",
                     isUser
-                      ? "rounded-none border border-border bg-primary px-3 py-3 text-primary-foreground shadow-sm sm:px-4"
+                      ? "border border-[#171713] bg-[#171713] px-3 py-3 text-[#fffaf0] shadow-[4px_4px_0_rgba(240,79,47,0.22)] dark:border-[#fffaf0]/25 dark:bg-[#fffaf0] dark:text-[#171713] sm:px-4"
                       : cn("py-2", tone !== "default" && toneStyles[tone] && "px-3 py-3 border"),
                   )}
                 >
@@ -156,7 +156,7 @@ export function AIChat({
         </div>
       </div>
 
-      <div className="relative border-t border-border bg-background/80 px-4 py-4 backdrop-blur-xl sm:px-6">
+      <div className="relative border-t border-[#171713]/15 bg-[#fffaf0]/80 px-4 py-4 backdrop-blur-xl dark:border-[#fffaf0]/15 dark:bg-[#11110f]/85 sm:px-6 before:absolute before:left-0 before:top-[-1px] before:h-px before:w-20 before:bg-[#f04f2f]">
         <div className={cn("w-full", fullBleed ? "max-w-none" : "mx-auto max-w-4xl")}>
           {children}
         </div>
