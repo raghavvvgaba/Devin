@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { env } from "~/env";
 import { ensureUserRecord } from "~/server/auth/sync-user";
 import { disconnectGithub } from "~/server/github/connection";
 
@@ -17,10 +18,12 @@ export async function POST(request: Request) {
   const requestUrl = new URL(request.url);
   const returnTo = requestUrl.searchParams.get("returnTo");
   const redirectTarget =
-    returnTo && returnTo.startsWith("/") ? returnTo : "/onboarding/github";
+    returnTo?.startsWith("/") && !returnTo.startsWith("//")
+      ? returnTo
+      : "/onboarding/github";
 
   return NextResponse.redirect(
-    new URL(`${redirectTarget}?success=disconnected`, request.url),
+    new URL(`${redirectTarget}?success=disconnected`, env.APP_URL),
     { status: 303 },
   );
 }

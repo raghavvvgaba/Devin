@@ -61,6 +61,8 @@ The app validates its environment in [src/env.js](src/env.js).
 
 Server-side variables:
 
+- `APP_URL` — public application origin, such as `http://localhost:3000` locally
+  or `https://inlaya.raghavgaba.me` in production
 - `DATABASE_URL`
 - `CLERK_SECRET_KEY`
 - `GITHUB_APP_ID`

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { env } from "~/env";
 import { ensureUserRecord } from "~/server/auth/sync-user";
 import { markGithubConnected } from "~/server/github/connection";
 import { writeGithubImportSession } from "~/server/github/import-session";
@@ -36,13 +37,13 @@ export async function GET(request: Request) {
 
   if (error) {
     return NextResponse.redirect(
-      new URL(`/onboarding/github?error=${error}`, request.url),
+      new URL(`/onboarding/github?error=${error}`, env.APP_URL),
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL("/onboarding/github?error=missing_callback_params", request.url),
+      new URL("/onboarding/github?error=missing_callback_params", env.APP_URL),
     );
   }
 
@@ -55,7 +56,10 @@ export async function GET(request: Request) {
       await writeGithubImportSession(githubImportSession.accessToken);
 
       return NextResponse.redirect(
-        new URL("/projects?newImport=true&success=import_session_ready", request.url),
+        new URL(
+          "/projects?newImport=true&success=import_session_ready",
+          env.APP_URL,
+        ),
       );
     }
 
@@ -69,7 +73,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.redirect(
-      new URL("/onboarding/github?success=connected", request.url),
+      new URL("/onboarding/github?success=connected", env.APP_URL),
     );
   } catch (error_) {
     const rawMessage =
@@ -79,7 +83,7 @@ export async function GET(request: Request) {
       : "github_connect_failed";
 
     return NextResponse.redirect(
-      new URL(`/onboarding/github?error=${errorMessage}`, request.url),
+      new URL(`/onboarding/github?error=${errorMessage}`, env.APP_URL),
     );
   }
 }
