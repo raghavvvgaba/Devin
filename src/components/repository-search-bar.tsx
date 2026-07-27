@@ -12,16 +12,18 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 
 type RepositorySearchBarProps = {
-  repositories: RepoImportItem[];
-  importedProjects: Record<string, string>;
-  githubAppInstallUrl: string;
   disabled: boolean;
+  githubAppInstallUrl: string;
+  importedProjects: Record<string, string>;
+  onGrantAccess: () => void;
+  repositories: RepoImportItem[];
 };
 
 export function RepositorySearchBar({
   repositories,
   importedProjects,
   githubAppInstallUrl,
+  onGrantAccess,
   disabled,
 }: RepositorySearchBarProps) {
   const router = useRouter();
@@ -78,6 +80,7 @@ export function RepositorySearchBar({
   );
 
   const normalizedQuery = query.trim().toLowerCase();
+  const isImporting = importingRepo !== null;
   const filtered = normalizedQuery
     ? repositories.filter((repo) =>
         repo.fullName.toLowerCase().includes(normalizedQuery),
@@ -190,7 +193,7 @@ export function RepositorySearchBar({
                 ) : repo.status === "ready" ? (
                   <Button
                     className="bg-primary text-primary-foreground font-bold uppercase text-[10px] tracking-widest h-10 rounded-none px-8"
-                    disabled={importingRepo === repo.fullName}
+                    disabled={disabled || isImporting}
                     onClick={() =>
                       handleImport(repo.owner, repo.name, repo.fullName)
                     }
@@ -212,6 +215,7 @@ export function RepositorySearchBar({
                   >
                     <a
                       href={githubAppInstallUrl}
+                      onClick={onGrantAccess}
                       rel="noreferrer"
                       target="_blank"
                     >

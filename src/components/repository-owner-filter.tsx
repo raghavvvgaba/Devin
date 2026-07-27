@@ -1,7 +1,6 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "~/components/ui/button";
 import {
@@ -14,24 +13,16 @@ import {
 } from "~/components/ui/dropdown-menu";
 
 type RepositoryOwnerFilterProps = {
+  onOwnerChange: (owner: string) => void;
   owners: string[];
   selectedOwner: string;
 };
 
 export function RepositoryOwnerFilter({
+  onOwnerChange,
   owners,
   selectedOwner,
 }: RepositoryOwnerFilterProps) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  function updateOwner(owner: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("owner", owner);
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
   return (
     <div className="flex flex-col gap-2 text-xs font-medium text-muted-foreground">
       <span className="text-[10px] font-bold uppercase tracking-widest">
@@ -52,7 +43,7 @@ export function RepositoryOwnerFilter({
             Repository owner
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
-            onValueChange={updateOwner}
+            onValueChange={onOwnerChange}
             value={selectedOwner}
           >
             {owners.map((owner) => (

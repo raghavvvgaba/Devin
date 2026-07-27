@@ -71,6 +71,7 @@ export async function GET(request: Request) {
       githubConnectionReference: githubUser.githubConnectionReference,
       githubUsername: githubUser.githubUsername,
     });
+    await writeGithubImportSession(githubUser.accessToken);
 
     return NextResponse.redirect(
       new URL(

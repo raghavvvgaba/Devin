@@ -1,92 +1,84 @@
 "use server";
 
+import { revalidateTag } from "next/cache";
+
+import type { RepoImportItem } from "~/lib/github-types";
 import { getAuth } from "~/server/auth/session";
 import { getGithubConnectionStatus } from "~/server/github/connection";
+import {
+  getImportRepositoriesTag,
+  hashGithubImportToken,
+} from "~/server/github/cache";
 import { readGithubImportSession } from "~/server/github/import-session";
 import { fetchImportRepositories, fetchGithubViewerLogin } from "~/server/github/repos";
 import { listImportedProjectsForUser } from "~/server/projects";
 
-const newProjectErrorMessages: Record<string, string> = {
-  github_required: "Connect GitHub before importing.",
-  github_repo_fetch_failed: "Could not fetch repository list.",
-  missing_repo_selection: "Choose a repository.",
-  refresh_import_session: "Session expired. Refresh access.",
-  repo_needs_access: "Grant the GitHub App access first.",
-  repo_not_in_session: "Repo not in current session.",
-};
+export type ImportModalData =
+  | { status: "github_disconnected" }
+  | { status: "session_required" }
+  | { message: string; status: "error" }
+  | {
+      importedProjects: Record<string, string>;
+      repositories: RepoImportItem[];
+      status: "ready";
+      viewerLogin: string;
+    };
 
-export async function fetchImportModalData(owner?: string) {
+export async function fetchImportModalData(
+  options: { refresh?: boolean } = {},
+): Promise<ImportModalData> {
   const { userId } = await getAuth();
+
   if (!userId) {
-    throw new Error("Unauthorized");
+    return {
+      message: "Your session has expired. Sign in again to import repositories.",
+      status: "error",
+    };
   }
 
   const githubStatus = await getGithubConnectionStatus(userId);
+
   if (!githubStatus.connected) {
-    return { hasSession: false, error: "github_required" };
+    return { status: "github_disconnected" };
   }
 
   const importSession = await readGithubImportSession();
+
   if (!importSession) {
-    return { hasSession: false };
+    return { status: "session_required" };
   }
 
-  const importedProjects = await listImportedProjectsForUser(userId);
-  const importedProjectsRecord = Object.fromEntries(
-    importedProjects.map((project) => [
-      `${project.repoOwner.toLowerCase()}/${project.repoName.toLowerCase()}`,
-      project.id,
-    ]),
-  );
-
-  let repoList: Awaited<ReturnType<typeof fetchImportRepositories>> | null = null;
-  let viewerLogin: string | null = null;
-  let sessionError: string | null = null;
+  if (options.refresh) {
+    revalidateTag(
+      getImportRepositoriesTag(
+        hashGithubImportToken(importSession.accessToken),
+      ),
+    );
+  }
 
   try {
-    [repoList, viewerLogin] = await Promise.all([
+    const [importedProjects, repositories, viewerLogin] = await Promise.all([
+      listImportedProjectsForUser(userId),
       fetchImportRepositories(importSession.accessToken),
       fetchGithubViewerLogin(importSession.accessToken),
     ]);
+
+    return {
+      importedProjects: Object.fromEntries(
+        importedProjects.map((project) => [
+          `${project.repoOwner.toLowerCase()}/${project.repoName.toLowerCase()}`,
+          project.id,
+        ]),
+      ),
+      repositories,
+      status: "ready",
+      viewerLogin,
+    };
   } catch {
-    sessionError =
-      newProjectErrorMessages.github_repo_fetch_failed ??
-      "GitHub did not return the repository list. Refresh access and try again.";
+    return {
+      message:
+        "GitHub did not return the repository list. Refresh access and try again.",
+      status: "error",
+    };
   }
-
-  const ownerOptions = repoList
-    ? Array.from(new Set(repoList.map((repo) => repo.owner))).sort((a, b) => {
-        if (viewerLogin && a.toLowerCase() === viewerLogin.toLowerCase()) {
-          return -1;
-        }
-
-        if (viewerLogin && b.toLowerCase() === viewerLogin.toLowerCase()) {
-          return 1;
-        }
-
-        return a.localeCompare(b);
-      })
-    : [];
-    
-  const selectedOwner =
-    ownerOptions.find(
-      (o) => owner?.toLowerCase() === o.toLowerCase(),
-    ) ??
-    ownerOptions.find(
-      (o) => viewerLogin?.toLowerCase() === o.toLowerCase(),
-    ) ??
-    ownerOptions[0] ??
-    "";
-    
-  const filteredRepos =
-    repoList?.filter((repo) => repo.owner === selectedOwner) ?? [];
-
-  return {
-    hasSession: true,
-    error: sessionError,
-    filteredRepos,
-    importedProjectsRecord,
-    ownerOptions,
-    selectedOwner,
-  };
 }

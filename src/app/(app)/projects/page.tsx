@@ -20,7 +20,6 @@ type ProjectsPageProps = {
   searchParams: Promise<{
     error?: string;
     newImport?: string;
-    owner?: string;
     success?: string;
   }>;
 };
@@ -68,7 +67,6 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             <NewImportModal
               defaultOpen={defaultOpen}
               githubAppInstallUrl={env.GITHUB_APP_INSTALL_URL}
-              owner={params.owner}
               trigger={
                 <Button className="h-11 rounded-none px-5 text-sm font-semibold">
                   <Plus className="h-4 w-4" />
