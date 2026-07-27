@@ -3,42 +3,27 @@ import { Skeleton } from "~/components/ui/skeleton";
 
 export default function ProjectsLoading() {
   return (
-    <AppShell description="" title="Projects">
-      <div className="flex justify-end pb-8">
-        <div className="flex gap-2">
-          <Skeleton className="h-6 w-24 rounded-none" />
-          <Skeleton className="h-6 w-24 rounded-none" />
-          <Skeleton className="h-6 w-24 rounded-none" />
-        </div>
-      </div>
-
-      <section className="space-y-5">
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <div className="space-y-2">
-            <Skeleton className="h-3 w-20 rounded-none" />
-            <Skeleton className="h-7 w-56 rounded-none" />
+    <AppShell compactHeader description="" title="Projects">
+      <div className="space-y-8 pb-8">
+        <section className="flex items-end justify-between border-b border-border pb-7">
+          <div>
+            <Skeleton className="h-14 w-48 rounded-none" />
+            <Skeleton className="mt-3 h-4 w-24 rounded-none" />
           </div>
-          <Skeleton className="h-10 w-32 rounded-none" />
-        </div>
+          <Skeleton className="h-11 w-44 rounded-none" />
+        </section>
 
-        <div className="grid gap-4">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div
-              className="flex items-center justify-between border border-border bg-card p-4"
+        <Skeleton className="h-16 w-full rounded-none" />
+
+        <section className="grid gap-4 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton
+              className="h-[180px] rounded-none"
               key={`projects-loading-${index}`}
-            >
-              <div className="flex items-center gap-4">
-                <Skeleton className="h-10 w-10 rounded-none" />
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-48 rounded-none" />
-                  <Skeleton className="h-3 w-28 rounded-none" />
-                </div>
-              </div>
-              <Skeleton className="h-10 w-10 rounded-none" />
-            </div>
+            />
           ))}
-        </div>
-      </section>
+        </section>
+      </div>
     </AppShell>
   );
 }

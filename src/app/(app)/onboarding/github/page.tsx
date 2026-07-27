@@ -1,15 +1,19 @@
 import Link from "next/link";
-import { Github, CheckCircle2, Circle, ArrowRight, ExternalLink, Unlink } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ExternalLink,
+  Github,
+  Unlink,
+} from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
 import { GithubOnboardingToast } from "~/components/github-onboarding-toast";
+import { InlayaMark } from "~/components/inlaya-mark";
+import { Button } from "~/components/ui/button";
 import { env } from "~/env";
 import { getAuth } from "~/server/auth/session";
 import { getGithubOnboardingPageData } from "~/server/projects";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 
 type GithubOnboardingPageProps = {
   searchParams: Promise<{
@@ -23,169 +27,125 @@ export default async function GithubOnboardingPage({
 }: GithubOnboardingPageProps) {
   const { userId } = await getAuth();
   const params = await searchParams;
-  const { errorMessage, milestones, nextStepMessage, status, successMessage } =
+  const { errorMessage, status, successMessage } =
     await getGithubOnboardingPageData(userId!, params);
 
   return (
-    <AppShell
-      description="Initialize secure GitHub identity mapping and app installation for repository access."
-      title="GitHub Onboarding"
-    >
+    <AppShell compactHeader contentWidth="full" title="Connect GitHub">
       <GithubOnboardingToast
         errorMessage={errorMessage}
         successMessage={successMessage}
       />
 
-      <Alert className="rounded-none border-primary/20 bg-primary/5">
-        <Github className="h-4 w-4 text-primary" />
-        <AlertTitle className="text-[10px] font-bold uppercase tracking-widest">
-          Next Step
-        </AlertTitle>
-        <AlertDescription className="text-xs font-medium uppercase mt-2 leading-relaxed">
-          {nextStepMessage}
-        </AlertDescription>
-      </Alert>
+      <main className="inlaya-landing -m-6 grid min-h-[calc(100vh-3.5rem)] place-items-center overflow-hidden bg-[#f3efe5] px-6 py-12 text-[#171713] selection:bg-[#f04f2f] selection:text-white dark:bg-[#11110f] dark:text-[#f3efe5] sm:px-10 lg:-m-8 lg:px-14">
+        <div className="mx-auto grid w-full max-w-5xl items-center gap-14 lg:grid-cols-[1fr_0.82fr] lg:gap-20">
+          <section className="inlaya-rise">
+            <div className="mb-8 flex items-center gap-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6d675d] dark:text-[#aaa69d]">
+              <InlayaMark className="h-4 w-4" />
+              GitHub connection
+            </div>
 
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6">
-          <Card className="rounded-none border-border shadow-none bg-card">
-            <CardHeader className="border-b border-border pb-6">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                  Configuration
-                </p>
-                <CardTitle className="text-xl uppercase tracking-tight">Identity Mapping</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-6">
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  This procedure links your authenticated Clerk session to a GitHub identity. 
-                  Minimal connection metadata is stored locally; GitHub remains the 
-                  authoritative source for repository data and issue state.
-                </p>
+            <h1 className="inlaya-display text-6xl font-medium leading-[0.9] tracking-[-0.06em] sm:text-7xl lg:text-[5.5rem]">
+              {status.connected ? (
+                <>
+                  GitHub is
+                  <span className="block text-[#f04f2f]">connected.</span>
+                </>
+              ) : (
+                <>
+                  Connect
+                  <span className="block text-[#f04f2f]">GitHub.</span>
+                </>
+              )}
+            </h1>
 
-                <div className="border border-border bg-muted/30 p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      System State
-                    </p>
-                    {status.connected ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 rounded-none text-[10px] font-bold uppercase tracking-widest">
-                        Mapped
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-muted text-muted-foreground border-border rounded-none text-[10px] font-bold uppercase tracking-widest">
-                        Unmapped
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center bg-background border border-border">
-                      <Github className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold uppercase tracking-tight">
-                        {status.connected ? `@${status.githubUsername}` : "Anonymous"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground uppercase">
-                        {status.connected ? "Identity Verified" : "Awaiting Authorization"}
-                      </p>
-                    </div>
-                  </div>
+            <p className="mt-6 max-w-md text-base leading-7 text-[#625d53] dark:text-[#aaa69d]">
+              {status.connected
+                ? `@${status.githubUsername} is ready to import repositories.`
+                : "Import a repository and start working on its issues."}
+            </p>
+
+            <div className="mt-10 border-t border-[#171713]/20 pt-6 dark:border-[#fffaf0]/20">
+              {status.connected ? (
+                <div className="mb-6 flex items-center gap-2 text-sm font-semibold">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  @{status.githubUsername}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              ) : null}
 
-          <Card className="rounded-none border-border shadow-none bg-card">
-            <CardHeader className="border-b border-border pb-6">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                  Procedures
-                </p>
-                <CardTitle className="text-xl uppercase tracking-tight">System Actions</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 {!status.connected ? (
-                  <Button asChild className="bg-primary text-primary-foreground font-bold uppercase text-[10px] tracking-widest h-12 rounded-none px-8">
+                  <Button
+                    asChild
+                    className="group h-12 rounded-none bg-[#171713] px-6 text-sm font-semibold text-[#fffaf0] hover:bg-[#f04f2f] dark:bg-[#fffaf0] dark:text-[#171713] dark:hover:bg-[#f04f2f]"
+                  >
                     <a href="/api/github/connect">
-                      Initialize Connection
+                      Continue with GitHub
+                      <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                     </a>
                   </Button>
                 ) : (
                   <>
-                    <Button asChild className="bg-primary text-primary-foreground font-bold uppercase text-[10px] tracking-widest h-12 rounded-none px-8">
-                      <a href={env.GITHUB_APP_INSTALL_URL} rel="noreferrer" target="_blank">
-                        Install GitHub App
-                        <ExternalLink className="ml-2 h-3.5 w-3.5" />
+                    <Button
+                      asChild
+                      className="h-12 rounded-none bg-[#171713] px-6 text-sm font-semibold text-[#fffaf0] hover:bg-[#f04f2f] dark:bg-[#fffaf0] dark:text-[#171713] dark:hover:bg-[#f04f2f]"
+                    >
+                      <a
+                        href={env.GITHUB_APP_INSTALL_URL}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Choose repositories
+                        <ExternalLink className="ml-2 h-4 w-4" />
                       </a>
                     </Button>
-                    <Button asChild variant="outline" className="border-border font-bold uppercase text-[10px] tracking-widest h-12 rounded-none px-8">
+                    <Button
+                      asChild
+                      variant="outline"
+                      className="group h-12 rounded-none border-[#171713]/25 bg-transparent px-6 text-sm font-semibold hover:bg-[#171713]/5 dark:border-[#fffaf0]/25 dark:hover:bg-white/5"
+                    >
                       <Link href="/projects?newImport=true">
-                        Project Import
-                        <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                        Import repository
+                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                       </Link>
                     </Button>
-                    <form
-                      action="/api/github/disconnect?returnTo=/onboarding/github"
-                      method="post"
-                      className="w-full sm:w-auto"
-                    >
-                      <Button variant="outline" className="w-full sm:w-auto border-destructive/20 text-destructive hover:bg-destructive/10 font-bold uppercase text-[10px] tracking-widest h-12 rounded-none px-8">
-                        <Unlink className="mr-2 h-3.5 w-3.5" />
-                        Disconnect
-                      </Button>
-                    </form>
                   </>
                 )}
               </div>
-              
-              {status.connected && (
-                <p className="mt-6 text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-relaxed">
-                  Note: If target repositories reside within an Organization, ensure the 
-                  GitHub App is installed on that specific Organization.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
 
-        <div className="space-y-6">
-          <Card className="rounded-none border-border shadow-none bg-card">
-            <CardHeader className="border-b border-border pb-6">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                  Roadmap
-                </p>
-                <CardTitle className="text-xl uppercase tracking-tight">Sequence</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                {milestones.map((milestone, index) => {
-                  const isDone = status.connected && index === 0;
-                  return (
-                    <div
-                      className={`flex gap-4 border border-border p-4 transition ${isDone ? 'bg-muted/30 opacity-60' : 'bg-background'}`}
-                      key={milestone}
-                    >
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-[10px] font-bold ${isDone ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground'}`}>
-                        0{index + 1}
-                      </span>
-                      <p className={`text-xs font-bold uppercase tracking-tight leading-relaxed ${isDone ? 'line-through text-muted-foreground' : ''}`}>
-                        {milestone}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+              {status.connected ? (
+                <form
+                  action="/api/github/disconnect?returnTo=/onboarding/github"
+                  className="mt-5"
+                  method="post"
+                >
+                  <Button
+                    variant="ghost"
+                    className="h-auto rounded-none px-0 py-1 text-xs font-medium text-[#777167] hover:bg-transparent hover:text-destructive dark:text-[#8f8b82]"
+                  >
+                    <Unlink className="mr-2 h-3.5 w-3.5" />
+                    Disconnect
+                  </Button>
+                </form>
+              ) : null}
+            </div>
+          </section>
+
+          <div
+            aria-hidden="true"
+            className="inlaya-rise-delayed relative mx-auto aspect-square w-full max-w-[430px]"
+          >
+            <div className="absolute inset-0 translate-x-3 translate-y-3 bg-[#f04f2f] sm:translate-x-5 sm:translate-y-5" />
+            <div className="relative grid h-full place-items-center overflow-hidden border border-[#171713] bg-[#171713] text-[#fffaf0] dark:border-[#fffaf0]/20 dark:bg-[#090907]">
+              <div className="absolute -right-[28%] -top-[28%] h-[72%] w-[72%] rotate-45 border border-white/10" />
+              <div className="absolute -bottom-[34%] -left-[34%] h-[80%] w-[80%] rotate-45 border border-white/10" />
+              <div className="absolute left-0 top-0 h-1 w-24 bg-[#f04f2f]" />
+              <Github className="relative h-28 w-28 sm:h-36 sm:w-36" strokeWidth={1.25} />
+              <InlayaMark className="absolute bottom-6 right-6 h-8 w-8 sm:bottom-8 sm:right-8 sm:h-10 sm:w-10" />
+            </div>
+          </div>
         </div>
-      </section>
+      </main>
     </AppShell>
   );
 }
