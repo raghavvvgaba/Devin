@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
+import { GithubConnectionToast } from "~/components/github-connection-toast";
 import { GithubDisconnectDialog } from "~/components/github-disconnect-dialog";
 import { GithubDisconnectToast } from "~/components/github-disconnect-toast";
 import { NewImportModal } from "~/components/new-import-modal";
@@ -45,6 +46,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
 
   return (
     <AppShell compactHeader description="" title="Projects">
+      <GithubConnectionToast
+        didConnect={params.success === "github_connected"}
+      />
       <GithubDisconnectToast
         didDisconnect={params.success === "disconnected"}
       />

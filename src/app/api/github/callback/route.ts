@@ -73,7 +73,10 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.redirect(
-      new URL("/onboarding/github?success=connected", env.APP_URL),
+      new URL(
+        "/projects?newImport=true&success=github_connected",
+        env.APP_URL,
+      ),
     );
   } catch (error_) {
     const rawMessage =
