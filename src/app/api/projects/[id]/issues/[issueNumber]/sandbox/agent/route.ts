@@ -1,17 +1,25 @@
 import { NextResponse } from "next/server";
 
-import { isAgentModelId } from "~/lib/agent-models";
+import { DEFAULT_AGENT_MODEL, isAgentModelId } from "~/lib/agent-models";
+import {
+  completeAgentRun,
+  createAgentRun,
+  createAgentTraceWriter,
+  failAgentRun,
+} from "~/server/agent-activity";
 import {
   appendIssueChatMessages,
   getIssueChatMessages,
   getOrCreateIssueChatSession,
   toSandboxAgentConversationHistory,
 } from "~/server/chat";
+import { env } from "~/env";
 import { revalidateProjectGitHubReads } from "~/server/github/cache";
 import { fetchProjectIssue } from "~/server/github/issues";
 import { runSandboxAgent } from "~/server/sandbox/agent";
 import { parseSandboxAgentMode } from "~/server/sandbox/agent-mode";
 import { formatSseEvent } from "~/server/sandbox/agent-stream";
+import { toTracePreview } from "~/server/sandbox/agent-trace";
 import {
   getOwnedIssueProject,
   readJsonObject,
@@ -140,7 +148,9 @@ export async function POST(
   const instruction = readStringField(body, "instruction");
   const mode = parseSandboxAgentMode(body?.mode);
   const requestedModel = readStringField(body, "model");
-  const model = isAgentModelId(requestedModel) ? requestedModel : undefined;
+  const model = isAgentModelId(requestedModel)
+    ? requestedModel
+    : DEFAULT_AGENT_MODEL;
 
   if (!mode) {
     return jsonFailure("Choose either Plan or Build mode.", 400);
@@ -180,6 +190,10 @@ export async function POST(
   const agentStream = createAgentStream();
 
   void (async () => {
+    const runStartedAt = Date.now();
+    let agentRunId: string | undefined;
+    let traceWriter: ReturnType<typeof createAgentTraceWriter> | undefined;
+
     try {
       const chatSession = await getOrCreateIssueChatSession({
         issueNumber: access.issueNumber,
@@ -187,6 +201,25 @@ export async function POST(
         title: issueResult.issue.title,
         userId: access.userId,
       });
+
+      try {
+        const agentRun = await createAgentRun({
+          chatSessionId: chatSession.id,
+          instructionPreview: toTracePreview(instruction, 240),
+          issueNumber: access.issueNumber,
+          issueTitle: issueResult.issue.title,
+          mode,
+          projectId: access.project.id,
+          provider: env.AI_PROVIDER,
+          requestedModel: model,
+          userId: access.userId,
+        });
+        agentRunId = agentRun.id;
+        traceWriter = createAgentTraceWriter(agentRun.id);
+      } catch (error) {
+        console.error("Sandbox agent activity run creation failed:", error);
+      }
+
       const conversationHistory = toSandboxAgentConversationHistory(
         await getIssueChatMessages(chatSession.id),
       );
@@ -207,6 +240,9 @@ export async function POST(
           onProgress(event) {
             agentStream.send(event);
           },
+          onTrace(event) {
+            traceWriter?.append(event);
+          },
         },
       );
 
@@ -218,6 +254,37 @@ export async function POST(
           status: result.status,
           usage: result.usage,
         });
+      }
+
+      if (traceWriter && agentRunId) {
+        traceWriter.append({
+          level: result.status === "failed" ? "error" : "info",
+          model: traceWriter.getResolvedModel(),
+          paths: result.filesTouched,
+          payload: {
+            filesTouched: result.filesTouched,
+            messagePreview: toTracePreview(result.message, 220),
+          },
+          status: result.status,
+          step: result.stepsUsed,
+          type: result.status === "failed" ? "run_failed" : "run_completed",
+          usage: result.usage,
+        });
+        await traceWriter.flush();
+
+        try {
+          await completeAgentRun({
+            durationMs: Date.now() - runStartedAt,
+            failureCode: result.failureCode,
+            resolvedModel: traceWriter.getResolvedModel(),
+            runId: agentRunId,
+            status: result.status,
+            stepsUsed: result.stepsUsed,
+            usage: result.usage,
+          });
+        } catch (error) {
+          console.error("Sandbox agent activity completion failed:", error);
+        }
       }
 
       let chatMessages:
@@ -233,6 +300,14 @@ export async function POST(
           });
         } catch (error) {
           console.error("Sandbox agent chat persistence failed:", error);
+          traceWriter?.append({
+            level: "warn",
+            payload: {
+              message: "The completed chat messages could not be persisted.",
+            },
+            status: "failed",
+            type: "persistence_error",
+          });
         }
       }
 
@@ -261,11 +336,38 @@ export async function POST(
       });
     } catch (error) {
       console.error("Sandbox agent stream failed:", error);
+
+      if (traceWriter && agentRunId) {
+        traceWriter.append({
+          level: "error",
+          payload: {
+            message: "The sandbox agent stream failed unexpectedly.",
+          },
+          status: "failed",
+          type: "run_failed",
+        });
+        await traceWriter.flush();
+
+        try {
+          await failAgentRun({
+            durationMs: Date.now() - runStartedAt,
+            failureCode: "stream_error",
+            runId: agentRunId,
+          });
+        } catch (persistenceError) {
+          console.error(
+            "Sandbox agent activity failure persistence failed:",
+            persistenceError,
+          );
+        }
+      }
+
       agentStream.send({
         message: "The sandbox agent could not finish this request.",
         type: "error",
       });
     } finally {
+      await traceWriter?.flush();
       agentStream.close();
     }
   })();

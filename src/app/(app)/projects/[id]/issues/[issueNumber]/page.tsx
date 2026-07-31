@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { Activity, ChevronLeft, ExternalLink } from "lucide-react";
 
 import { AppShell } from "~/components/app-shell";
 import { IssueChatWorkspace } from "~/components/issue-chat-workspace";
@@ -67,6 +67,17 @@ export default async function ProjectIssuePage({
               </Link>
             </Button>
             <div className="flex items-center gap-1">
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-none border-[#171713]/20 bg-transparent px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#171713] hover:border-[#f04f2f] hover:bg-[#f04f2f]/10 dark:border-[#fffaf0]/20 dark:text-[#fffaf0]"
+              >
+                <Link href="/activity">
+                  <Activity className="h-3.5 w-3.5" />
+                  Activity
+                </Link>
+              </Button>
               <IssueDetailsModal
                 author={issueResult.status === "ok" ? issueResult.issue.author : undefined}
                 body={issueResult.status === "ok" ? issueResult.issue.body : null}

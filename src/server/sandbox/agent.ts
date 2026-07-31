@@ -15,6 +15,15 @@ import {
   type SandboxAgentProgressHandler,
 } from "~/server/sandbox/agent-progress";
 import {
+  collectToolPaths,
+  parseToolArgumentsForTrace,
+  parseToolResultForTrace,
+  sanitizeToolArguments,
+  toTracePreview,
+  type SandboxAgentTraceEvent,
+  type SandboxAgentTraceHandler,
+} from "~/server/sandbox/agent-trace";
+import {
   buildSandboxAgentModelTools,
 } from "~/server/sandbox/tools/model-tools";
 import {
@@ -142,6 +151,7 @@ type ToolTurnClassification =
     };
 
 type ExecutedAgentTool = {
+  durationMs: number;
   result: AgentToolExecutionResult;
   toolCall: AIToolCall;
 };
@@ -166,6 +176,7 @@ type AgentToolBatchResult =
 
 type RunSandboxAgentOptions = {
   onProgress?: SandboxAgentProgressHandler;
+  onTrace?: SandboxAgentTraceHandler;
 };
 
 function hasToolMessageContent(
@@ -547,51 +558,142 @@ function buildUnknownToolFailureResult(
   };
 }
 
-function logAgentModelResponse(
+async function emitAgentTrace(
+  handler: SandboxAgentTraceHandler | undefined,
+  event: SandboxAgentTraceEvent,
+) {
+  if (!handler) {
+    return;
+  }
+
+  try {
+    await handler(event);
+  } catch (error) {
+    console.error("Sandbox agent trace handler failed:", error);
+  }
+}
+
+async function recordAgentModelResponse(
   input: SandboxAgentInput,
   phase: AgentModelPhase,
   step: number,
   response: AIGenerateTextResult,
+  durationMs: number,
+  options: RunSandboxAgentOptions,
 ) {
+  const textPreview = response.text.trim()
+    ? toTracePreview(response.text, 220)
+    : null;
+  const toolCalls =
+    response.toolCalls?.map((toolCall) => {
+      const argumentsValue = parseToolArgumentsForTrace(
+        toolCall.function.arguments,
+      );
+      const safeArguments = sanitizeToolArguments(
+        toolCall.function.name,
+        argumentsValue,
+      );
+
+      return {
+        arguments: safeArguments,
+        argumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
+        id: toolCall.id,
+        name: toolCall.function.name,
+      };
+    }) ?? [];
+
+  await emitAgentTrace(options.onTrace, {
+    durationMs,
+    model: response.model,
+    payload: {
+      hasText: Boolean(response.text.trim()),
+      textPreview,
+      toolCalls,
+    },
+    phase,
+    status: "completed",
+    step,
+    type: "model_response",
+    usage: response.usage,
+  });
+
   console.log("Sandbox agent model response:", {
+    durationMs,
     hasText: Boolean(response.text.trim()),
     issueNumber: input.issueNumber,
+    model: response.model,
     phase,
     projectId: input.projectId,
     step,
-    textPreview: response.text.trim() ? previewText(response.text) : null,
-    toolCalls:
-      response.toolCalls?.map((toolCall) => ({
-        argumentsPreview: previewText(toolCall.function.arguments, 160),
-        id: toolCall.id,
-        name: toolCall.function.name,
-      })) ?? [],
+    textPreview,
+    toolCalls,
     usage: response.usage,
   });
 }
 
-function logAgentToolResult(
+async function recordAgentToolResult(
   input: SandboxAgentInput,
   step: number,
   toolCall: AIToolCall,
   result: AgentToolExecutionResult,
+  durationMs: number,
+  options: RunSandboxAgentOptions,
 ) {
+  const argumentsValue = parseToolArgumentsForTrace(
+    toolCall.function.arguments,
+  );
+  const safeArguments = sanitizeToolArguments(
+    toolCall.function.name,
+    argumentsValue,
+  );
+  const toolMessageContent =
+    "toolMessageContent" in result ? result.toolMessageContent : undefined;
+  const resultValue = parseToolResultForTrace(toolMessageContent);
+  const latestObservationPreview =
+    "latestObservation" in result
+      ? toTracePreview(result.latestObservation, 220)
+      : null;
+  const toolMessagePreview = toolMessageContent
+    ? toTracePreview(toolMessageContent, 220)
+    : null;
+  const paths = collectToolPaths({
+    argumentsValue,
+    resultValue,
+    touchedPath: "touchedPath" in result ? result.touchedPath : undefined,
+  });
+
+  await emitAgentTrace(options.onTrace, {
+    durationMs,
+    level: result.status === "ok" ? "info" : "warn",
+    paths,
+    payload: {
+      arguments: safeArguments,
+      argumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
+      code: "code" in result ? result.code : undefined,
+      latestObservationPreview,
+      message: "message" in result ? result.message : undefined,
+      recentEvent: result.recentEvent,
+      toolMessagePreview,
+    },
+    status: result.status,
+    step,
+    toolCallId: toolCall.id,
+    toolName: toolCall.function.name,
+    type: "tool_result",
+  });
+
   console.log("Sandbox agent tool result:", {
+    durationMs,
     issueNumber: input.issueNumber,
-    latestObservationPreview:
-      "latestObservation" in result
-        ? previewText(result.latestObservation)
-        : null,
+    latestObservationPreview,
+    paths,
     projectId: input.projectId,
     recentEvent: result.recentEvent,
     status: result.status,
     step,
     tool: toolCall.function.name,
-    toolArgumentsPreview: previewText(toolCall.function.arguments, 160),
-    toolMessagePreview:
-      "toolMessageContent" in result
-        ? previewText(result.toolMessageContent, 220)
-        : null,
+    toolArgumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
+    toolMessagePreview,
   });
 }
 
@@ -931,6 +1033,7 @@ function buildBatchObservation(executed: ExecutedAgentTool[]) {
 function getToolFailures(executed: ExecutedAgentTool[]) {
   return executed.filter(
     (item): item is {
+      durationMs: number;
       result: AgentToolFailure;
       toolCall: AIToolCall;
     } => item.result.status === "tool_failure",
@@ -997,8 +1100,10 @@ async function executeReadOnlyBatch(
   let hadToolFailure = false;
 
   for (const toolCall of toolCalls) {
+    const toolStartedAt = Date.now();
     const result = await executeToolCall(toolCall, sessionId, mode);
     executed.push({
+      durationMs: Date.now() - toolStartedAt,
       result,
       toolCall,
     });
@@ -1083,6 +1188,7 @@ async function finalizeWithFinishTurn(
   failureCode?: AgentFailureCode,
 ) {
   let finishTurnResponse: AIGenerateTextResult;
+  const finishTurnStartedAt = Date.now();
 
   try {
     await emitProgress(options.onProgress, "Finishing up...");
@@ -1090,13 +1196,31 @@ async function finalizeWithFinishTurn(
   } catch (error) {
     console.error("Sandbox agent finish turn failed:", error);
     const mappedError = mapModelError(error);
+    await emitAgentTrace(options.onTrace, {
+      durationMs: Date.now() - finishTurnStartedAt,
+      level: "error",
+      payload: {
+        message: mappedError.message,
+      },
+      phase: "finish",
+      status: "failed",
+      step: state.stepsUsed + 1,
+      type: "model_error",
+    });
 
     return buildFailedResult(input, state, mappedError.code, mappedError.message);
   }
 
   state.stepsUsed += 1;
   state.usage = mergeUsage(state.usage, finishTurnResponse.usage);
-  logAgentModelResponse(input, "finish", state.stepsUsed, finishTurnResponse);
+  await recordAgentModelResponse(
+    input,
+    "finish",
+    state.stepsUsed,
+    finishTurnResponse,
+    Date.now() - finishTurnStartedAt,
+    options,
+  );
 
   let finishResponse: z.infer<typeof finishSchema>;
 
@@ -1104,6 +1228,18 @@ async function finalizeWithFinishTurn(
     finishResponse = parseFinishResponse(finishTurnResponse.text);
   } catch (error) {
     console.error("Sandbox agent finish response was invalid:", error);
+    await emitAgentTrace(options.onTrace, {
+      level: "error",
+      model: finishTurnResponse.model,
+      payload: {
+        message: "The agent returned an invalid completion response.",
+        responsePreview: toTracePreview(finishTurnResponse.text, 220),
+      },
+      phase: "finish",
+      status: "failed",
+      step: state.stepsUsed,
+      type: "model_error",
+    });
     return buildFailedResult(
       input,
       state,
@@ -1124,8 +1260,23 @@ export async function runSandboxAgent(
   input: SandboxAgentInput,
   options: RunSandboxAgentOptions = {},
 ): Promise<SandboxAgentInternalResult> {
+  const instructionPreview = toTracePreview(input.userInstruction, 240);
+
+  await emitAgentTrace(options.onTrace, {
+    payload: {
+      instructionPreview,
+      issueNumber: input.issueNumber,
+      mode: input.mode,
+      projectId: input.projectId,
+      repoName: input.repoName,
+      repoOwner: input.repoOwner,
+    },
+    status: "running",
+    type: "run_started",
+  });
+
   console.log("Sandbox agent started:", {
-    instructionPreview: previewText(input.userInstruction, 240),
+    instructionPreview,
     issueNumber: input.issueNumber,
     mode: input.mode,
     projectId: input.projectId,
@@ -1160,19 +1311,38 @@ export async function runSandboxAgent(
 
   while (true) {
     let modelResponse: AIGenerateTextResult;
+    const modelTurnStartedAt = Date.now();
 
     try {
       modelResponse = await callAgentToolTurn(state, input.mode, input.model);
     } catch (error) {
       console.error("Sandbox agent tool turn failed:", error);
       const mappedError = mapModelError(error);
+      await emitAgentTrace(options.onTrace, {
+        durationMs: Date.now() - modelTurnStartedAt,
+        level: "error",
+        payload: {
+          message: mappedError.message,
+        },
+        phase: "tool",
+        status: "failed",
+        step: state.stepsUsed + 1,
+        type: "model_error",
+      });
 
       return buildFailedResult(input, state, mappedError.code, mappedError.message);
     }
 
     state.stepsUsed += 1;
     state.usage = mergeUsage(state.usage, modelResponse.usage);
-    logAgentModelResponse(input, "tool", state.stepsUsed, modelResponse);
+    await recordAgentModelResponse(
+      input,
+      "tool",
+      state.stepsUsed,
+      modelResponse,
+      Date.now() - modelTurnStartedAt,
+      options,
+    );
     await emitModelProgress(options.onProgress, modelResponse);
 
     const toolTurn = classifyToolTurn(modelResponse);
@@ -1185,12 +1355,34 @@ export async function runSandboxAgent(
         step: state.stepsUsed,
         toolNames: toolTurn.toolCalls.map((toolCall) => toolCall.function.name),
       });
+      await emitAgentTrace(options.onTrace, {
+        level: "warn",
+        payload: {
+          reason: toolTurn.reason,
+          toolNames: toolTurn.toolCalls.map(
+            (toolCall) => toolCall.function.name,
+          ),
+        },
+        status: "invalid",
+        step: state.stepsUsed,
+        type: "invalid_tool_batch",
+      });
 
       if (invalidBatchRetryUsed) {
         console.error("Sandbox agent invalid batch retry exhausted:", {
           issueNumber: input.issueNumber,
           projectId: input.projectId,
           step: state.stepsUsed,
+        });
+        await emitAgentTrace(options.onTrace, {
+          level: "error",
+          payload: {
+            message:
+              "The agent returned an invalid tool batch and could not recover.",
+          },
+          status: "failed",
+          step: state.stepsUsed,
+          type: "recovery_exhausted",
         });
         return buildFailedResult(
           input,
@@ -1213,6 +1405,14 @@ export async function runSandboxAgent(
         projectId: input.projectId,
         step: state.stepsUsed,
       });
+      await emitAgentTrace(options.onTrace, {
+        payload: {
+          message: "The model recovered after an invalid tool batch.",
+        },
+        status: "recovered",
+        step: state.stepsUsed,
+        type: "recovery_recovered",
+      });
       awaitingInvalidBatchRecovery = false;
     }
 
@@ -1230,12 +1430,20 @@ export async function runSandboxAgent(
     if (toolTurn.status === "single") {
       const toolCall = toolTurn.toolCalls[0];
       await emitToolProgress(options.onProgress, toolCall);
+      const toolStartedAt = Date.now();
       const toolResult = await executeToolCall(
         toolCall,
         input.sessionId,
         input.mode,
       );
-      logAgentToolResult(input, state.stepsUsed, toolCall, toolResult);
+      await recordAgentToolResult(
+        input,
+        state.stepsUsed,
+        toolCall,
+        toolResult,
+        Date.now() - toolStartedAt,
+        options,
+      );
 
       pushRecentEvent(state, toolResult.recentEvent);
 
@@ -1264,6 +1472,16 @@ export async function runSandboxAgent(
         if (exhaustedFailure) {
           pushRecentEvent(state, exhaustedFailure.recentEvent);
           state.latestObservation = exhaustedFailure.latestObservation;
+          await emitAgentTrace(options.onTrace, {
+            level: "error",
+            payload: {
+              message: exhaustedFailure.message,
+              recentEvent: exhaustedFailure.recentEvent,
+            },
+            status: "failed",
+            step: state.stepsUsed,
+            type: "recovery_exhausted",
+          });
           appendUserMessage(
             state,
             [
@@ -1309,11 +1527,13 @@ export async function runSandboxAgent(
     );
 
     for (const executedTool of batchResult.executed) {
-      logAgentToolResult(
+      await recordAgentToolResult(
         input,
         state.stepsUsed,
         executedTool.toolCall,
         executedTool.result,
+        executedTool.durationMs,
+        options,
       );
       pushRecentEvent(state, executedTool.result.recentEvent);
     }
@@ -1367,6 +1587,16 @@ export async function runSandboxAgent(
 
       if (exhaustedFailure) {
         pushRecentEvent(state, exhaustedFailure.recentEvent);
+        await emitAgentTrace(options.onTrace, {
+          level: "error",
+          payload: {
+            message: exhaustedFailure.message,
+            recentEvent: exhaustedFailure.recentEvent,
+          },
+          status: "failed",
+          step: state.stepsUsed,
+          type: "recovery_exhausted",
+        });
         appendUserMessage(
           state,
           [

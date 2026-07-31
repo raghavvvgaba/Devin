@@ -1,6 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
+import { Activity } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -53,6 +54,13 @@ export function AppShell({
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              className="flex h-8 items-center gap-2 border border-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground sm:px-3"
+              href="/activity"
+            >
+              <Activity className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Activity</span>
+            </Link>
             <ModeToggle />
             <div className="h-8 w-px bg-border" />
             <UserButton
