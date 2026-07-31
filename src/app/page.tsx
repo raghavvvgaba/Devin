@@ -6,7 +6,6 @@ import {
   GitBranch,
   Github,
   Layers3,
-  Play,
   ShieldCheck,
   Sparkles,
   Terminal,
@@ -95,13 +94,6 @@ export default function HomePage() {
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <PrimaryAction />
-                <a
-                  href="#workflow"
-                  className="inline-flex h-12 items-center justify-center gap-2 border border-[#171713]/25 bg-[#fffaf0]/40 px-6 text-sm font-semibold transition hover:border-[#171713] hover:bg-[#fffaf0] dark:border-[#fffaf0]/25 dark:bg-white/5 dark:hover:border-[#fffaf0] dark:hover:bg-white/10"
-                >
-                  <Play className="h-3.5 w-3.5 fill-current" />
-                  See how it works
-                </a>
               </div>
 
               <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-xs font-medium text-[#625d53] dark:text-[#aaa69d]">
@@ -298,7 +290,7 @@ export default function HomePage() {
               <div className="grid gap-3">
                 {[
                   "Each project runs in an isolated cloud sandbox.",
-                  "Every change is visible in the diff and live preview.",
+                  "Every change is visible in the live preview.",
                   "Your repository stays untouched until you submit the PR.",
                 ].map((item) => (
                   <div

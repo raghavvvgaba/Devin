@@ -168,17 +168,18 @@ export function ChatInputBox({
         </div>
 
         <Button
-          className="ml-auto h-7 rounded-none bg-[#171713] px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#fffaf0] hover:bg-[#f04f2f] dark:bg-[#fffaf0] dark:text-[#171713] dark:hover:bg-[#f04f2f] dark:hover:text-white"
+          aria-label={isPreparing ? "Agent is working" : "Run agent"}
+          className="ml-auto h-7 w-7 rounded-none bg-[#171713] p-0 text-[#fffaf0] hover:bg-[#f04f2f] dark:bg-[#fffaf0] dark:text-[#171713] dark:hover:bg-[#f04f2f] dark:hover:text-white"
           disabled={accessBlocked || isPreparing || !instruction.trim()}
           onClick={onPrepareEdit}
+          title={isPreparing ? "Agent is working" : "Run agent"}
           type="button"
         >
           {isPreparing ? (
-            <LoaderCircle className="mr-1 h-3 w-3 animate-spin" />
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <ArrowUp className="mr-1 h-3 w-3" />
+            <ArrowUp className="h-3.5 w-3.5" />
           )}
-          {isPreparing ? "Working" : "Run Agent"}
         </Button>
       </div>
     </div>
