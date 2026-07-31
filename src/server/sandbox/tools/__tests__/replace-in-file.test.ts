@@ -73,6 +73,55 @@ describe("replaceSandboxFileText", () => {
     });
   });
 
+  it("replaces exact multiline text beginning on the requested line", async () => {
+    readRawFileMock.mockResolvedValueOnce({
+      content: [
+        "const skills = {",
+        "  backend: [",
+        "    {",
+        '      name: "Appwrite",',
+        "    },",
+        "  ],",
+        "};",
+      ].join("\n"),
+      path: "src/data/skills.jsx",
+      size: 81,
+    });
+
+    await replaceSandboxFileText(
+      buildInput({
+        newText: [
+          "    {",
+          '      name: "Appwrite",',
+          "    },",
+          "    {",
+          '      name: "PostgreSQL",',
+          "    },",
+        ].join("\n"),
+        oldText: ["    {", '      name: "Appwrite",', "    },"].join("\n"),
+        path: "src/data/skills.jsx",
+        startLine: 3,
+      }),
+    );
+
+    expect(writeRawFileMock).toHaveBeenCalledWith({
+      content: [
+        "const skills = {",
+        "  backend: [",
+        "    {",
+        '      name: "Appwrite",',
+        "    },",
+        "    {",
+        '      name: "PostgreSQL",',
+        "    },",
+        "  ],",
+        "};",
+      ].join("\n"),
+      path: "src/data/skills.jsx",
+      sessionId: "session-test",
+    });
+  });
+
   it("preserves the rest of the file and normalizes windows line endings", async () => {
     readRawFileMock.mockResolvedValueOnce({
       content: "one\r\ntwo target\r\nthree",
@@ -130,6 +179,27 @@ describe("replaceSandboxFileText", () => {
       replaceSandboxFileText(buildInput({ startLine: 2 })),
     ).rejects.toThrow(
       "line_text_mismatch: oldText found on candidate lines 1, 3",
+    );
+    expect(writeRawFileMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the candidate start line for multiline oldText", async () => {
+    readRawFileMock.mockResolvedValueOnce({
+      content: "first\nalpha\nbeta\nlast",
+      path: "src/file.ts",
+      size: 21,
+    });
+
+    await expect(
+      replaceSandboxFileText(
+        buildInput({
+          oldText: "alpha\nbeta",
+          path: "src/file.ts",
+          startLine: 1,
+        }),
+      ),
+    ).rejects.toThrow(
+      "line_text_mismatch: oldText found on candidate line 2",
     );
     expect(writeRawFileMock).not.toHaveBeenCalled();
   });

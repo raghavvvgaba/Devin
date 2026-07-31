@@ -29,22 +29,31 @@ type ReplaceInFileResult = {
   startLine: number;
 };
 
-function countOccurrences(value: string, search: string) {
-  let count = 0;
+function findOccurrenceIndexes(value: string, search: string) {
+  const indexes: number[] = [];
   let index = value.indexOf(search);
 
   while (index !== -1) {
-    count += 1;
+    indexes.push(index);
     index = value.indexOf(search, index + search.length);
   }
 
-  return count;
+  return indexes;
 }
 
-function buildLineTextMismatchMessage(lines: string[], oldText: string) {
-  const candidateLines = lines
-    .map((line, index) => (line.includes(oldText) ? index + 1 : undefined))
-    .filter((line): line is number => line !== undefined);
+function getLineNumberAtOffset(content: string, offset: number) {
+  return content.slice(0, offset).split("\n").length;
+}
+
+function buildLineTextMismatchMessage(
+  content: string,
+  occurrenceIndexes: number[],
+) {
+  const candidateLines = [
+    ...new Set(
+      occurrenceIndexes.map((index) => getLineNumberAtOffset(content, index)),
+    ),
+  ];
 
   if (candidateLines.length === 0) {
     return "line_text_mismatch: oldText was not found elsewhere in the file";
@@ -83,19 +92,33 @@ export async function replaceSandboxFileText(
     throw new Error("line_not_found");
   }
 
-  const matchCount = countOccurrences(currentLine, input.oldText);
+  const lineStartOffset =
+    lineIndex === 0 ? 0 : lines.slice(0, lineIndex).join("\n").length + 1;
+  const lineEndOffset = lineStartOffset + currentLine.length;
+  const occurrenceIndexes = findOccurrenceIndexes(
+    normalizedContent,
+    input.oldText,
+  );
+  const targetOccurrenceIndexes = occurrenceIndexes.filter(
+    (index) => index >= lineStartOffset && index <= lineEndOffset,
+  );
 
-  if (matchCount === 0) {
-    throw new Error(buildLineTextMismatchMessage(lines, input.oldText));
+  if (targetOccurrenceIndexes.length === 0) {
+    throw new Error(
+      buildLineTextMismatchMessage(normalizedContent, occurrenceIndexes),
+    );
   }
 
-  if (matchCount > 1) {
+  if (targetOccurrenceIndexes.length > 1) {
     throw new Error("ambiguous_line_match");
   }
 
-  lines[lineIndex] = currentLine.replace(input.oldText, input.newText);
-
-  const content = lines.join("\n");
+  const matchIndex = targetOccurrenceIndexes[0]!;
+  const content = [
+    normalizedContent.slice(0, matchIndex),
+    input.newText,
+    normalizedContent.slice(matchIndex + input.oldText.length),
+  ].join("");
   assertSandboxFileContentSize(content);
 
   const writeResult = await sandboxProvider.writeRawFile({
@@ -142,11 +165,13 @@ export const replaceSandboxAgentTool = {
     additionalProperties: false,
     properties: {
       newText: {
-        description: "Replacement text for the matched text on the target line.",
+        description:
+          "Replacement text for the exact match, which may span multiple lines.",
         type: "string",
       },
       oldText: {
-        description: "Exact existing text expected on the target line.",
+        description:
+          "Exact existing text expected to begin on the target line; may span multiple lines.",
         type: "string",
       },
       path: {

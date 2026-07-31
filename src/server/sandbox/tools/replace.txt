@@ -1,10 +1,11 @@
-Replace exact text on one inspected line.
+Replace exact text beginning on an inspected line.
 
 Usage:
-- Use this for targeted edits after reading the relevant lines.
+- Use this for targeted single-line or multiline edits after reading the relevant lines.
 - `path` should be a repository-relative file path.
 - `startLine` is 1-based and should come from read_file output.
-- `oldText` must be exact text from the target line.
-- The target line must contain `oldText` exactly once.
-- If the target line does not match, the failure may include candidate line numbers. Read the candidate line before retrying.
+- `oldText` must be exact text beginning on the target line and may span multiple lines.
+- The target line must begin exactly one occurrence of `oldText`.
+- `newText` may span multiple lines.
+- If the target line does not begin a match, the failure may include candidate start-line numbers. Read the candidate lines before retrying.
 - Use write_file instead for full rewrites or new complete file contents.

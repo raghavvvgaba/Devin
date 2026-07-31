@@ -82,7 +82,7 @@ Examples:
 
 ## `replace_in_file`
 
-Purpose: Replace exact text on one inspected line.
+Purpose: Replace exact text beginning on an inspected line.
 
 Input:
 - `sessionId: string`
@@ -103,8 +103,11 @@ Behavior:
 - reads the current file before writing
 - normalizes line endings to `\n`
 - target line must exist
-- target line must contain `oldText` exactly once
-- when the target line does not contain `oldText`, the failure returns up to `5` candidate line numbers where it appears elsewhere
-- caller should inspect a candidate line with `read_file` before retrying
+- `oldText` must match exactly and may span multiple lines
+- the match must start on `startLine`
+- exactly one occurrence of `oldText` may start on the target line
+- `newText` may span multiple lines
+- when no match starts on the target line, the failure returns up to `5` candidate start-line numbers where `oldText` appears elsewhere
+- caller should inspect every line included in `oldText` with `read_file` before retrying
 - writes the full updated file through the sandbox provider
-- use this for targeted line edits instead of full-file `write_file`
+- use this for targeted single-line or multiline edits instead of full-file `write_file`

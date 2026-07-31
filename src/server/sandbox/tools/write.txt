@@ -4,4 +4,4 @@ Usage:
 - `path` should be a repository-relative file path.
 - `content` must contain the full final file contents.
 - Only write files you have already inspected.
-- Prefer replace_in_file for targeted single-line edits.
+- Prefer replace_in_file for targeted single-line or multiline edits.
