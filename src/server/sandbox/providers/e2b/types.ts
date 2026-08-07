@@ -5,6 +5,7 @@ import type {
   SandboxCommandInput,
   SandboxDiffInput,
   SandboxFileInput,
+  SandboxFailureCode,
   SandboxListFilesInput,
   SandboxStatus,
   SandboxWriteFileInput,
@@ -18,7 +19,7 @@ export type SandboxCtor = typeof import("e2b").Sandbox;
 
 export type PackageManager = "bun" | "npm" | "pnpm" | "yarn";
 
-export type SupportedRepoKind = "static" | "vite-react";
+export type SupportedRepoKind = "nextjs" | "static" | "vite-react";
 
 export type RepoPreviewConfig = {
   installCommand?: string;
@@ -46,6 +47,8 @@ export type E2BSandboxSession = {
   previewUrl: string;
   status: SandboxStatus;
   logs: string[];
+  failureCode?: SandboxFailureCode;
+  failureMessage?: string;
   message?: string;
   startedAt?: string;
   endAt?: string;

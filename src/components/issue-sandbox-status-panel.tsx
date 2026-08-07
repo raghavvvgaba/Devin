@@ -16,6 +16,15 @@ import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
@@ -39,6 +48,8 @@ type StartupStage =
 type SandboxSession = {
   endAt?: string;
   environmentId: string;
+  failureCode?: "startup_failed" | "unsupported_repository";
+  failureMessage?: string;
   logs: string[];
   message?: string;
   previewError?: string;
@@ -163,6 +174,8 @@ export function IssueSandboxStatusPanel({
   const [isCheckingPreview, setIsCheckingPreview] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isUnsupportedRepoDialogOpen, setIsUnsupportedRepoDialogOpen] =
+    useState(false);
   const isActive = session ? ACTIVE_STATUSES.has(session.status) : false;
   const canStart = !session || session.status === "stopped" || session.status === "error";
   const canOpenPreview =
@@ -187,11 +200,23 @@ export function IssueSandboxStatusPanel({
     }
   }, [canOpenPreview, displayMessage, onPreviewStateChange, session]);
 
+  useEffect(() => {
+    if (
+      session?.failureCode === "unsupported_repository" &&
+      (session.status === "stopped" || session.status === "error")
+    ) {
+      setIsUnsupportedRepoDialogOpen(true);
+    }
+  }, [session?.failureCode, session?.sessionId, session?.status]);
+
   const saveSession = useCallback(
     (nextSession: SandboxSession) => {
       setSession(nextSession);
 
-      if (nextSession.status === "stopped") {
+      if (
+        nextSession.status === "stopped" ||
+        nextSession.status === "error"
+      ) {
         window.localStorage.removeItem(storageKey);
         return;
       }
@@ -484,7 +509,8 @@ export function IssueSandboxStatusPanel({
   }
 
   return (
-    <div className="flex w-full items-center justify-between gap-4 text-[#171713] dark:text-[#fffaf0]">
+    <>
+      <div className="flex w-full items-center justify-between gap-4 text-[#171713] dark:text-[#fffaf0]">
       {/* Left side: Status and Real-time message */}
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span
@@ -695,6 +721,53 @@ export function IssueSandboxStatusPanel({
           <ModeToggle />
         </div>
       </div>
-    </div>
+      </div>
+
+      <Dialog
+        open={isUnsupportedRepoDialogOpen}
+        onOpenChange={setIsUnsupportedRepoDialogOpen}
+      >
+        <DialogContent
+          className="gap-0 rounded-none border-destructive/30 bg-[#f3efe5] p-0 sm:max-w-lg dark:bg-[#171713]"
+          showCloseButton={false}
+        >
+          <DialogHeader className="border-b border-[#171713]/10 p-6 dark:border-white/10">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center border border-destructive/30 bg-destructive/10 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-destructive">
+                Repository compatibility
+              </span>
+            </div>
+            <DialogTitle className="text-xl font-bold uppercase tracking-tight">
+              This repository is not supported yet
+            </DialogTitle>
+            <DialogDescription className="pt-2 leading-relaxed">
+              This repository does not match a structure Devin can run yet. The
+              temporary sandbox was cleaned up automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#777167] dark:text-[#aaa69d]">
+              Detection result
+            </p>
+            <p className="whitespace-pre-wrap border-l-2 border-destructive bg-destructive/[0.06] px-4 py-3 text-sm leading-relaxed text-[#171713] dark:text-[#fffaf0]">
+              {session?.failureMessage ??
+                "This repository does not match a supported application structure."}
+            </p>
+          </div>
+
+          <DialogFooter className="border-t border-[#171713]/10 p-4 dark:border-white/10">
+            <DialogClose asChild>
+              <Button className="rounded-none" type="button" variant="outline">
+                Close
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

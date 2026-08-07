@@ -79,15 +79,6 @@ export async function createSandboxSessionRecord(input: {
   });
 }
 
-/** Deletes sandbox session records for the given session id. */
-export async function deleteSandboxSessionRecord(sessionId: string) {
-  await db.sandboxSession.deleteMany({
-    where: {
-      sessionId,
-    },
-  });
-}
-
 /** Marks a sandbox session as stopped without deleting the record. */
 export async function markSandboxSessionStopped(sessionId: string) {
   return db.sandboxSession.updateMany({

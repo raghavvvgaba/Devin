@@ -1,6 +1,7 @@
 import type { AIUsage } from "~/server/ai/types";
 
 export type SandboxStatus = "starting" | "installing" | "running" | "stopped" | "error";
+export type SandboxFailureCode = "startup_failed" | "unsupported_repository";
 export type PreviewState = "ready" | "recovering" | "stale" | "offline";
 export type StartupStage = "creating" | "scaffolding" | "installing" | "seeding" | "starting-preview" | "ready" | "error";
 export type SandboxSubmitState = "idle" | "running" | "completed" | "failed";
@@ -20,6 +21,8 @@ export type SandboxSession = {
   previewUrl: string;
   status: SandboxStatus;
   logs: string[];
+  failureCode?: SandboxFailureCode;
+  failureMessage?: string;
   message?: string;
   startedAt?: string;
   endAt?: string;

@@ -4,7 +4,6 @@ import { env } from "~/env";
 import { getRepoInstallationAccessToken } from "~/server/github/app-auth";
 import {
   createSandboxSessionRecord,
-  deleteSandboxSessionRecord,
   getReusableProjectSandboxSession,
   getSandboxSessionRecordBySessionId,
   markSandboxSessionStopped,
@@ -20,6 +19,10 @@ import {
   SANDBOX_METADATA_APP,
   SANDBOX_TIMEOUT_MS,
   STARTUP_PREVIEW_TIMEOUT_MS,
+  UNSUPPORTED_FULL_STACK_REPO_MESSAGE,
+  UNSUPPORTED_NESTED_APP_REPO_MESSAGE,
+  UNSUPPORTED_REPO_MESSAGE,
+  UNSUPPORTED_WORKSPACE_REPO_MESSAGE,
 } from "~/server/sandbox/providers/e2b/constants";
 import { detectRepoPreviewConfig } from "~/server/sandbox/providers/e2b/repo-detect";
 import {
@@ -63,10 +66,13 @@ import type {
   RestoreSessionInput,
   StartSessionInput,
 } from "~/server/sandbox/providers/e2b/types";
+import type { SandboxFailureCode } from "~/server/sandbox/types";
 import type {
   SandboxProvider,
   StopSandboxSessionInput,
 } from "~/server/sandbox/types";
+
+const FAILED_SESSION_RETENTION_MS = 60_000;
 
 async function getRepositoryCloneToken(input: StartSessionInput) {
   const token = await getRepoInstallationAccessToken(
@@ -171,6 +177,19 @@ async function continueSandboxStartup(
     }
 
     const failureMessage = describeSessionError(session, error);
+    const unsupportedMessages = [
+      UNSUPPORTED_FULL_STACK_REPO_MESSAGE,
+      UNSUPPORTED_NESTED_APP_REPO_MESSAGE,
+      UNSUPPORTED_REPO_MESSAGE,
+      UNSUPPORTED_WORKSPACE_REPO_MESSAGE,
+    ];
+    const failureCode: SandboxFailureCode = unsupportedMessages.some((message) =>
+      failureMessage.includes(message),
+    )
+      ? "unsupported_repository"
+      : "startup_failed";
+    session.failureCode = failureCode;
+    session.failureMessage = failureMessage;
     session.message = failureMessage;
     appendLog(session, `\nError: ${failureMessage}\n`);
 
@@ -214,8 +233,25 @@ async function continueSandboxStartup(
       setStartupStage(session, "error", "Unable to start preview");
     }
 
-    deleteTrackedSession(session.sessionId);
-    await deleteSandboxSessionRecord(session.sessionId);
+    try {
+      await markSandboxSessionStopped(session.sessionId);
+    } catch (persistenceError) {
+      appendLog(
+        session,
+        `Unable to mark failed sandbox session as stopped: ${describeSessionError(
+          session,
+          persistenceError,
+        )}\n`,
+      );
+    }
+
+    // Keep the terminal failure in memory briefly so the polling client can
+    // display the modal. It is intentionally not restored after a refresh.
+    setTimeout(() => {
+      if (getTrackedSession(session.sessionId) === session) {
+        deleteTrackedSession(session.sessionId);
+      }
+    }, FAILED_SESSION_RETENTION_MS);
   }
 }
 
@@ -378,7 +414,11 @@ export async function heartbeatSandboxSession(sessionId: string) {
     return null;
   }
 
-  if (session.lastHeartbeatAt) {
+  if (
+    session.lastHeartbeatAt &&
+    session.status !== "stopped" &&
+    session.status !== "error"
+  ) {
     await touchSandboxSessionHeartbeat(
       session.sessionId,
       new Date(session.lastHeartbeatAt),

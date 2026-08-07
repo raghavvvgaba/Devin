@@ -14,12 +14,12 @@ export const DEFAULT_SANDBOX_READ_LINE_COUNT = 120;
 export const DEFAULT_SANDBOX_READ_MAX_CHARACTERS = 10_000;
 
 export const UNSUPPORTED_REPO_MESSAGE =
-  "This repository type is not supported yet. Supported: static HTML/CSS/JS and Vite React.";
+  "This repository type is not supported yet. Supported: static HTML/CSS/JS, Vite React, and root Next.js.";
 export const UNSUPPORTED_PACKAGE_MANAGER_MESSAGE =
   "This package manager is not supported yet. Supported: bun, npm, pnpm, and yarn.";
 export const UNSUPPORTED_FULL_STACK_REPO_MESSAGE =
-  "This looks like a frontend/backend repository. Multi-process full-stack sandboxes are not supported yet. Supported right now: root static HTML/CSS/JS and root Vite React.";
+  "This looks like a frontend/backend repository. Multi-process full-stack sandboxes are not supported yet. Supported right now: root static HTML/CSS/JS, root Vite React, and root Next.js.";
 export const UNSUPPORTED_NESTED_APP_REPO_MESSAGE =
-  "This repository appears to keep its app in a nested folder. Nested apps are not supported yet. Supported right now: root static HTML/CSS/JS and root Vite React.";
+  "This repository appears to keep its app in a nested folder. Nested apps are not supported yet. Supported right now: root static HTML/CSS/JS, root Vite React, and root Next.js.";
 export const UNSUPPORTED_WORKSPACE_REPO_MESSAGE =
-  "This looks like a workspace or monorepo. Workspace/monorepo sandboxes are not supported yet. Supported right now: root static HTML/CSS/JS and root Vite React.";
+  "This looks like a workspace or monorepo. Workspace/monorepo sandboxes are not supported yet. Supported right now: root static HTML/CSS/JS, root Vite React, and root Next.js.";

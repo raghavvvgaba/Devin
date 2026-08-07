@@ -81,6 +81,8 @@ export function publicSession(session: E2BSandboxSession): PublicSandboxSession 
     previewUrl: session.previewUrl,
     status: session.status,
     logs: session.logs,
+    failureCode: session.failureCode,
+    failureMessage: session.failureMessage,
     message: session.message,
     startedAt: session.startedAt,
     endAt: session.endAt,

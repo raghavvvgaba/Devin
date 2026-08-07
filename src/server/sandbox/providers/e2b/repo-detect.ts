@@ -7,38 +7,14 @@ import {
   UNSUPPORTED_REPO_MESSAGE,
   UNSUPPORTED_WORKSPACE_REPO_MESSAGE,
 } from "~/server/sandbox/providers/e2b/constants";
+import { detectFramework } from "~/server/sandbox/providers/e2b/frameworks";
+import { hasWorkspaces } from "~/server/sandbox/providers/e2b/frameworks/package-json";
 import { fileExists, readTextFile } from "~/server/sandbox/providers/e2b/sandbox-ops";
 import type {
   E2BSandboxSession,
   PackageManager,
   RepoPreviewConfig,
 } from "~/server/sandbox/providers/e2b/types";
-
-function getRecordValue(value: unknown, key: string) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)[key]
-    : undefined;
-}
-
-function hasDependency(packageJson: unknown, dependencyName: string) {
-  const dependencies = getRecordValue(packageJson, "dependencies");
-  const devDependencies = getRecordValue(packageJson, "devDependencies");
-
-  return (
-    typeof getRecordValue(dependencies, dependencyName) === "string" ||
-    typeof getRecordValue(devDependencies, dependencyName) === "string"
-  );
-}
-
-function hasDevScript(packageJson: unknown) {
-  const scripts = getRecordValue(packageJson, "scripts");
-  return typeof getRecordValue(scripts, "dev") === "string";
-}
-
-function hasWorkspaces(packageJson: unknown) {
-  const workspaces = getRecordValue(packageJson, "workspaces");
-  return Array.isArray(workspaces) || (Boolean(workspaces) && typeof workspaces === "object");
-}
 
 async function hasNestedPackage(session: E2BSandboxSession, directory: string) {
   return fileExists(session, `${PROJECT_DIR}/${directory}/package.json`);
@@ -148,45 +124,12 @@ function getPrepareCommand(packageManager: PackageManager) {
   return 'export PATH="$HOME/.bun/bin:$PATH"; command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash';
 }
 
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 function getPreviewHost(previewUrl: string) {
   try {
     return new URL(previewUrl).host;
   } catch {
-    throw new Error("Unable to determine the preview host for Vite.");
+    throw new Error("Unable to determine the preview host.");
   }
-}
-
-function withViteAllowedHost(command: string, previewHost: string) {
-  return `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=${shellQuote(previewHost)} ${command}`;
-}
-
-function getPreviewCommand(packageManager: PackageManager, previewHost: string) {
-  if (packageManager === "bun") {
-    return `export PATH="$HOME/.bun/bin:$PATH"; ${withViteAllowedHost(
-      `bun run dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`,
-      previewHost,
-    )}`;
-  }
-  if (packageManager === "pnpm") {
-    return withViteAllowedHost(
-      `pnpm dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`,
-      previewHost,
-    );
-  }
-  if (packageManager === "yarn") {
-    return withViteAllowedHost(
-      `yarn dev --host 0.0.0.0 --port ${PREVIEW_PORT}`,
-      previewHost,
-    );
-  }
-  return withViteAllowedHost(
-    `npm run dev -- --host 0.0.0.0 --port ${PREVIEW_PORT}`,
-    previewHost,
-  );
 }
 
 export async function detectRepoPreviewConfig(
@@ -204,13 +147,12 @@ export async function detectRepoPreviewConfig(
       throw new Error(UNSUPPORTED_REPO_MESSAGE);
     }
 
-    const isViteReact =
-      hasDevScript(packageJson) &&
-      hasDependency(packageJson, "vite") &&
-      hasDependency(packageJson, "react") &&
-      hasDependency(packageJson, "react-dom");
+    if (hasWorkspaces(packageJson)) {
+      await detectUnsupportedRepoShape(session, packageJson);
+    }
 
-    if (!isViteReact) {
+    const detectedFramework = detectFramework(packageJson);
+    if (!detectedFramework) {
       await detectUnsupportedRepoShape(session, packageJson);
       throw new Error(UNSUPPORTED_REPO_MESSAGE);
     }
@@ -219,9 +161,13 @@ export async function detectRepoPreviewConfig(
     const previewHost = getPreviewHost(session.previewUrl);
     return {
       installCommand: getInstallCommand(packageManager),
-      kind: "vite-react",
+      kind: detectedFramework.adapter.kind,
       prepareCommand: getPrepareCommand(packageManager),
-      previewCommand: getPreviewCommand(packageManager, previewHost),
+      previewCommand: detectedFramework.adapter.createPreviewCommand({
+        packageManager,
+        previewHost,
+        previewPort: PREVIEW_PORT,
+      }),
       previewCwd: PROJECT_DIR,
     };
   }
