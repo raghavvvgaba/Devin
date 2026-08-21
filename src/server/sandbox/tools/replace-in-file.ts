@@ -18,7 +18,6 @@ type ReplaceInFileInput = {
   oldText: string;
   path: string;
   sessionId: string;
-  startLine: number;
 };
 
 type ReplaceInFileResult = {
@@ -45,7 +44,7 @@ function getLineNumberAtOffset(content: string, offset: number) {
   return content.slice(0, offset).split("\n").length;
 }
 
-function buildLineTextMismatchMessage(
+function buildAmbiguousMatchMessage(
   content: string,
   occurrenceIndexes: number[],
 ) {
@@ -55,26 +54,19 @@ function buildLineTextMismatchMessage(
     ),
   ];
 
-  if (candidateLines.length === 0) {
-    return "line_text_mismatch: oldText was not found elsewhere in the file";
-  }
-
   const visibleCandidates = candidateLines.slice(0, REPLACE_CANDIDATE_LINE_CAP);
   const remainingCount = candidateLines.length - visibleCandidates.length;
 
   return [
-    `line_text_mismatch: oldText found on candidate ${visibleCandidates.length === 1 ? "line" : "lines"} ${visibleCandidates.join(", ")}`,
+    `ambiguous_text_match: oldText matched ${occurrenceIndexes.length} times on ${visibleCandidates.length === 1 ? "line" : "lines"} ${visibleCandidates.join(", ")}`,
     ...(remainingCount > 0 ? [`and ${remainingCount} more`] : []),
+    "Provide more surrounding text so oldText matches exactly once.",
   ].join(" ");
 }
 
 export async function replaceSandboxFileText(
   input: ReplaceInFileInput,
 ): Promise<ReplaceInFileResult> {
-  if (input.startLine < 1) {
-    throw new Error("invalid_line_range");
-  }
-
   if (!input.oldText) {
     throw new Error("missing_old_text");
   }
@@ -84,36 +76,25 @@ export async function replaceSandboxFileText(
     sessionId: input.sessionId,
   });
   const normalizedContent = rawFile.content.replace(/\r\n/g, "\n");
-  const lines = normalizedContent === "" ? [] : normalizedContent.split("\n");
-  const lineIndex = input.startLine - 1;
-  const currentLine = lines[lineIndex];
-
-  if (currentLine === undefined) {
-    throw new Error("line_not_found");
-  }
-
-  const lineStartOffset =
-    lineIndex === 0 ? 0 : lines.slice(0, lineIndex).join("\n").length + 1;
-  const lineEndOffset = lineStartOffset + currentLine.length;
   const occurrenceIndexes = findOccurrenceIndexes(
     normalizedContent,
     input.oldText,
   );
-  const targetOccurrenceIndexes = occurrenceIndexes.filter(
-    (index) => index >= lineStartOffset && index <= lineEndOffset,
-  );
 
-  if (targetOccurrenceIndexes.length === 0) {
+  if (occurrenceIndexes.length === 0) {
     throw new Error(
-      buildLineTextMismatchMessage(normalizedContent, occurrenceIndexes),
+      "text_not_found: oldText was not found exactly in the current file. Re-read the relevant lines before retrying.",
     );
   }
 
-  if (targetOccurrenceIndexes.length > 1) {
-    throw new Error("ambiguous_line_match");
+  if (occurrenceIndexes.length > 1) {
+    throw new Error(
+      buildAmbiguousMatchMessage(normalizedContent, occurrenceIndexes),
+    );
   }
 
-  const matchIndex = targetOccurrenceIndexes[0]!;
+  const matchIndex = occurrenceIndexes[0]!;
+  const startLine = getLineNumberAtOffset(normalizedContent, matchIndex);
   const content = [
     normalizedContent.slice(0, matchIndex),
     input.newText,
@@ -132,7 +113,7 @@ export async function replaceSandboxFileText(
     oldText: input.oldText,
     path: writeResult.path,
     session: writeResult.session,
-    startLine: input.startLine,
+    startLine,
   };
 }
 
@@ -141,7 +122,6 @@ const replaceArgumentsSchema = z
     newText: z.string(),
     oldText: z.string(),
     path: z.string(),
-    startLine: z.number().int(),
   })
   .strict();
 
@@ -157,7 +137,6 @@ export const replaceSandboxAgentTool = {
       oldText: parsedArguments.oldText,
       path: parsedArguments.path,
       sessionId: context.sessionId,
-      startLine: parsedArguments.startLine,
     });
   },
   id: "replace_in_file",
@@ -171,19 +150,15 @@ export const replaceSandboxAgentTool = {
       },
       oldText: {
         description:
-          "Exact existing text expected to begin on the target line; may span multiple lines.",
+          "Exact existing text to replace. Include enough surrounding text to make the match unique; may span multiple lines.",
         type: "string",
       },
       path: {
         description: "Repository-relative file path to edit.",
         type: "string",
       },
-      startLine: {
-        description: "One-based line number where oldText is expected.",
-        type: "integer",
-      },
     },
-    required: ["path", "startLine", "oldText", "newText"],
+    required: ["path", "oldText", "newText"],
     type: "object",
   },
 } satisfies SandboxAgentToolDefinition<

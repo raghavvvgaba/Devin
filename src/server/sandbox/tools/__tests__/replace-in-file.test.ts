@@ -15,6 +15,7 @@ vi.mock("~/server/sandbox/provider", () => ({
 import { MAX_SANDBOX_FILE_BYTES } from "../files";
 import {
   REPLACE_CANDIDATE_LINE_CAP,
+  replaceSandboxAgentTool,
   replaceSandboxFileText,
 } from "../replace-in-file";
 
@@ -35,7 +36,6 @@ function buildInput(
     oldText: "Full stack developer",
     path: "src/components/Hero.jsx",
     sessionId: "session-test",
-    startLine: 2,
     ...overrides,
   };
 }
@@ -56,7 +56,22 @@ beforeEach(() => {
 });
 
 describe("replaceSandboxFileText", () => {
-  it("replaces text on the requested line and writes updated content", async () => {
+  it("rejects missing required arguments before contacting E2B", async () => {
+    await expect(
+      replaceSandboxAgentTool.execute(
+        {
+          oldText: "Full stack developer",
+          path: "src/components/Hero.jsx",
+        } as never,
+        { sessionId: "session-test" },
+      ),
+    ).rejects.toThrow();
+
+    expect(readRawFileMock).not.toHaveBeenCalled();
+    expect(writeRawFileMock).not.toHaveBeenCalled();
+  });
+
+  it("replaces one unique exact match and writes updated content", async () => {
     const result = await replaceSandboxFileText(buildInput());
 
     expect(writeRawFileMock).toHaveBeenCalledWith({
@@ -73,7 +88,7 @@ describe("replaceSandboxFileText", () => {
     });
   });
 
-  it("replaces exact multiline text beginning on the requested line", async () => {
+  it("replaces one unique exact multiline match", async () => {
     readRawFileMock.mockResolvedValueOnce({
       content: [
         "const skills = {",
@@ -100,7 +115,6 @@ describe("replaceSandboxFileText", () => {
         ].join("\n"),
         oldText: ["    {", '      name: "Appwrite",', "    },"].join("\n"),
         path: "src/data/skills.jsx",
-        startLine: 3,
       }),
     );
 
@@ -134,7 +148,6 @@ describe("replaceSandboxFileText", () => {
         newText: "updated",
         oldText: "target",
         path: "src/file.ts",
-        startLine: 2,
       }),
     );
 
@@ -145,21 +158,6 @@ describe("replaceSandboxFileText", () => {
     });
   });
 
-  it("fails when startLine is invalid", async () => {
-    await expect(
-      replaceSandboxFileText(buildInput({ startLine: 0 })),
-    ).rejects.toThrow("invalid_line_range");
-    expect(readRawFileMock).not.toHaveBeenCalled();
-    expect(writeRawFileMock).not.toHaveBeenCalled();
-  });
-
-  it("fails when the line does not exist", async () => {
-    await expect(
-      replaceSandboxFileText(buildInput({ startLine: 99 })),
-    ).rejects.toThrow("line_not_found");
-    expect(writeRawFileMock).not.toHaveBeenCalled();
-  });
-
   it("fails when oldText is empty", async () => {
     await expect(
       replaceSandboxFileText(buildInput({ oldText: "" })),
@@ -168,7 +166,7 @@ describe("replaceSandboxFileText", () => {
     expect(writeRawFileMock).not.toHaveBeenCalled();
   });
 
-  it("returns candidate lines when oldText is missing from the target line", async () => {
+  it("rejects multiple exact matches and returns their line numbers", async () => {
     readRawFileMock.mockResolvedValueOnce({
       content: "Full stack developer\nsecond\nFull stack developer\nfourth",
       path: "src/components/Hero.jsx",
@@ -176,44 +174,46 @@ describe("replaceSandboxFileText", () => {
     });
 
     await expect(
-      replaceSandboxFileText(buildInput({ startLine: 2 })),
+      replaceSandboxFileText(buildInput()),
     ).rejects.toThrow(
-      "line_text_mismatch: oldText found on candidate lines 1, 3",
+      "ambiguous_text_match: oldText matched 2 times on lines 1, 3 Provide more surrounding text so oldText matches exactly once.",
     );
     expect(writeRawFileMock).not.toHaveBeenCalled();
   });
 
-  it("returns the candidate start line for multiline oldText", async () => {
+  it("finds a unique multiline match without a supplied line number", async () => {
     readRawFileMock.mockResolvedValueOnce({
       content: "first\nalpha\nbeta\nlast",
       path: "src/file.ts",
       size: 21,
     });
 
-    await expect(
-      replaceSandboxFileText(
-        buildInput({
-          oldText: "alpha\nbeta",
-          path: "src/file.ts",
-          startLine: 1,
-        }),
-      ),
-    ).rejects.toThrow(
-      "line_text_mismatch: oldText found on candidate line 2",
+    const result = await replaceSandboxFileText(
+      buildInput({
+        newText: "updated",
+        oldText: "alpha\nbeta",
+        path: "src/file.ts",
+      }),
     );
-    expect(writeRawFileMock).not.toHaveBeenCalled();
+
+    expect(result.startLine).toBe(2);
+    expect(writeRawFileMock).toHaveBeenCalledWith({
+      content: "first\nupdated\nlast",
+      path: "src/file.ts",
+      sessionId: "session-test",
+    });
   });
 
-  it("reports when oldText is not found elsewhere in the file", async () => {
+  it("reports when oldText has no exact match", async () => {
     await expect(
       replaceSandboxFileText(buildInput({ oldText: "missing" })),
     ).rejects.toThrow(
-      "line_text_mismatch: oldText was not found elsewhere in the file",
+      "text_not_found: oldText was not found exactly in the current file. Re-read the relevant lines before retrying.",
     );
     expect(writeRawFileMock).not.toHaveBeenCalled();
   });
 
-  it("caps candidate line numbers in mismatch failures", async () => {
+  it("caps line numbers in ambiguous-match failures", async () => {
     readRawFileMock.mockResolvedValueOnce({
       content: [
         ...Array.from(
@@ -227,16 +227,14 @@ describe("replaceSandboxFileText", () => {
     });
 
     await expect(
-      replaceSandboxFileText(
-        buildInput({ startLine: REPLACE_CANDIDATE_LINE_CAP + 2 }),
-      ),
+      replaceSandboxFileText(buildInput()),
     ).rejects.toThrow(
-      "line_text_mismatch: oldText found on candidate lines 1, 2, 3, 4, 5 and 1 more",
+      "ambiguous_text_match: oldText matched 6 times on lines 1, 2, 3, 4, 5 and 1 more Provide more surrounding text so oldText matches exactly once.",
     );
     expect(writeRawFileMock).not.toHaveBeenCalled();
   });
 
-  it("fails when oldText appears multiple times on the target line", async () => {
+  it("fails when oldText appears multiple times on one line", async () => {
     readRawFileMock.mockResolvedValueOnce({
       content: "first\nrepeat repeat\nlast",
       path: "src/file.ts",
@@ -248,10 +246,11 @@ describe("replaceSandboxFileText", () => {
         buildInput({
           oldText: "repeat",
           path: "src/file.ts",
-          startLine: 2,
         }),
       ),
-    ).rejects.toThrow("ambiguous_line_match");
+    ).rejects.toThrow(
+      "ambiguous_text_match: oldText matched 2 times on line 2",
+    );
     expect(writeRawFileMock).not.toHaveBeenCalled();
   });
 

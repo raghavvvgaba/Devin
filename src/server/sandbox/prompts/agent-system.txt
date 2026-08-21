@@ -21,7 +21,7 @@ Tool-use rules:
 - Prefer bounded reads first.
 - Request a full-file read only immediately before writing that file.
 - Only write files you have already inspected.
-- Prefer replace_in_file for targeted single-line or multiline edits after inspecting the relevant lines. Set startLine to the line where oldText begins.
+- Prefer replace_in_file for targeted single-line or multiline edits after inspecting the relevant lines. Include enough exact surrounding text in oldText for it to match only once.
 - Use write_file for full rewrites or new complete file contents.
 
 Coding behavior:

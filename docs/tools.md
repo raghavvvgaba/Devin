@@ -82,32 +82,29 @@ Examples:
 
 ## `replace_in_file`
 
-Purpose: Replace exact text beginning on an inspected line.
+Purpose: Replace one unique exact text match in an inspected file.
 
 Input:
 - `sessionId: string`
 - `path: string`
-- `startLine: number`
 - `oldText: string`
 - `newText: string`
 
 Output:
 - `path: string`
-- `startLine: number`
+- `startLine: number` — discovered line where the unique match began
 - `oldText: string`
 - `newText: string`
 - `session: SandboxSession`
 
 Behavior:
-- `startLine` is 1-based, matching `read_file`
 - reads the current file before writing
 - normalizes line endings to `\n`
-- target line must exist
 - `oldText` must match exactly and may span multiple lines
-- the match must start on `startLine`
-- exactly one occurrence of `oldText` may start on the target line
+- exactly one occurrence of `oldText` must exist in the current file
 - `newText` may span multiple lines
-- when no match starts on the target line, the failure returns up to `5` candidate start-line numbers where `oldText` appears elsewhere
-- caller should inspect every line included in `oldText` with `read_file` before retrying
+- when no exact match exists, the caller must reread the relevant lines before retrying
+- when multiple matches exist, the failure returns up to `5` matching line numbers and asks for more surrounding text
+- caller should inspect every line included in `oldText` with `read_file` before editing
 - writes the full updated file through the sandbox provider
 - use this for targeted single-line or multiline edits instead of full-file `write_file`
