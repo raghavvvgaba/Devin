@@ -1,8 +1,8 @@
-# Devin - Project Context
+# Inlaya - Project Context
 
 ## What We're Building
 
-Devin is a simple SaaS product for non-technical users like PMs or CEOs to make small, reviewable contributions to existing GitHub codebases without living inside GitHub, code editors, terminals, or diff-heavy developer tools.
+Inlaya is a simple SaaS product for non-technical users like PMs or CEOs to make small, reviewable contributions to existing GitHub codebases without living inside GitHub, code editors, terminals, or diff-heavy developer tools.
 
 The product goal is to make the GitHub contribution loop understandable:
 

@@ -161,7 +161,7 @@ async function generateText(
         Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
         "HTTP-Referer": new URL(env.GITHUB_APP_CALLBACK_URL).origin,
-        "X-OpenRouter-Title": "Devin",
+        "X-OpenRouter-Title": "Inlaya",
       },
       body: JSON.stringify({
         max_tokens: input.maxTokens,

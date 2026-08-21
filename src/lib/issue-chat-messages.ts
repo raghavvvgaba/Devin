@@ -93,7 +93,7 @@ const issueChatErrorMessages: Record<IssueChatErrorCode, IssueChatMessageEntry> 
     tone: "error",
   },
   missing_file_path: {
-    body: "Add the repository file path in the file section before asking Devin to prepare the edit.",
+    body: "Add the repository file path in the file section before asking Inlaya to prepare the edit.",
     tone: "error",
   },
   missing_instruction: {
@@ -101,7 +101,7 @@ const issueChatErrorMessages: Record<IssueChatErrorCode, IssueChatMessageEntry> 
     tone: "error",
   },
   missing_session_id: {
-    body: "Start the sandbox first so Devin has a live workspace to edit.",
+    body: "Start the sandbox first so Inlaya has a live workspace to edit.",
     tone: "error",
   },
   sandbox_not_running: {

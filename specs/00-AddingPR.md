@@ -10,7 +10,7 @@ Add a single submit action in the issue workspace that:
 4. Creates or reuses a pull request.
 5. Returns the PR URL to the app.
 
-This is the end of Devin's responsibility for this flow. A human engineer can review and merge the PR later.
+This is the end of Inlaya's responsibility for this flow. A human engineer can review and merge the PR later.
 
 ## Product Intent
 
@@ -213,7 +213,7 @@ We already agreed not to add extra complexity here yet.
 - storing durable PR workflow state in Prisma
 - exposing arbitrary write-capable git commands to the agent
 - using the end user's git email identity
-- handling merge/review logic inside Devin
+- handling merge/review logic inside Inlaya
 
 ## Summary
 

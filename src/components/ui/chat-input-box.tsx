@@ -80,7 +80,7 @@ export function ChatInputBox({
         placeholder={
           mode === "plan"
             ? "Ask about the project or plan a change."
-            : "Describe what you want Devin to change."
+            : "Describe what you want Inlaya to change."
         }
         value={instruction}
         required

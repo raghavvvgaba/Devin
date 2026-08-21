@@ -9,7 +9,7 @@ export default function SignUpPage() {
     <AuthShell
       description="Create an account to enter the MVP workspace and begin the GitHub onboarding flow."
       eyebrow="Phase 1"
-      title="Create your Devin workspace"
+      title="Create your Inlaya workspace"
     >
       <SignUp
         appearance={{

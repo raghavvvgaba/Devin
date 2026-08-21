@@ -120,7 +120,7 @@ function buildSubmitTitle(issueNumber: number, issueTitle: string) {
 
 function buildPullRequestBody(issueNumber: number) {
   return [
-    `Created by Devin from issue #${issueNumber}.`,
+    `Created by Inlaya from issue #${issueNumber}.`,
     "",
     "A human engineer should review and merge this PR if the changes look good.",
   ].join("\n");
@@ -218,7 +218,7 @@ export async function POST(
   if (!sessionId) {
     return jsonSubmit(
       {
-        message: "Start the sandbox first so Devin has a live workspace.",
+        message: "Start the sandbox first so Inlaya has a live workspace.",
         status: "failed",
       },
       { status: 400 },

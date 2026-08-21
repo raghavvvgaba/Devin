@@ -9,7 +9,7 @@ export default function SignInPage() {
     <AuthShell
       description="Sign in to access your protected workspace and continue toward the GitHub onboarding flow."
       eyebrow="Authentication"
-      title="Welcome back to Devin"
+      title="Welcome back to Inlaya"
     >
       <SignIn
         appearance={{

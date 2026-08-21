@@ -1,6 +1,6 @@
-# Devin
+# Inlaya
 
-Devin is a Next.js app for importing a GitHub repository, browsing its issues, and working on those issues inside a live E2B sandbox with AI-assisted edit flows.
+Inlaya is a Next.js app for importing a GitHub repository, browsing its issues, and working on those issues inside a live E2B sandbox with AI-assisted edit flows.
 
 ## What It Does
 

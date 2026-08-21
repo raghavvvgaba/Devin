@@ -4,7 +4,7 @@ This file explains the high-level structure of the app.
 
 ## Product Shape
 
-Devin is a repository-to-issue workflow app:
+Inlaya is a repository-to-issue workflow app:
 
 1. A user signs in.
 2. The user connects GitHub.

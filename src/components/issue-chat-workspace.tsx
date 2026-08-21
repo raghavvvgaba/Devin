@@ -310,7 +310,7 @@ export function IssueChatWorkspace({
     }
 
     if (!sessionId) {
-      toast.error("Start the sandbox first so Devin has a live workspace to edit.");
+      toast.error("Start the sandbox first so Inlaya has a live workspace to edit.");
       return;
     }
 
@@ -393,7 +393,7 @@ export function IssueChatWorkspace({
     }
 
     if (!sessionId) {
-      toast.error("Start the sandbox first so Devin has a live workspace to edit.");
+      toast.error("Start the sandbox first so Inlaya has a live workspace to edit.");
       return;
     }
 

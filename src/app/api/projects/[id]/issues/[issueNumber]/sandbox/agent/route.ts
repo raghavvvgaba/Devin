@@ -156,7 +156,7 @@ export async function POST(
   }
 
   if (!sessionId) {
-    return jsonFailure("Start the sandbox first so Devin has a live workspace.", 400);
+    return jsonFailure("Start the sandbox first so Inlaya has a live workspace.", 400);
   }
 
   if (

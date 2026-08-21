@@ -744,7 +744,7 @@ export function IssueSandboxStatusPanel({
               This repository is not supported yet
             </DialogTitle>
             <DialogDescription className="pt-2 leading-relaxed">
-              This repository does not match a structure Devin can run yet. The
+              This repository does not match a structure Inlaya can run yet. The
               temporary sandbox was cleaned up automatically.
             </DialogDescription>
           </DialogHeader>
