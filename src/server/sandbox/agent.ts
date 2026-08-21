@@ -40,7 +40,6 @@ import {
   type SandboxAgentToolName,
 } from "~/server/sandbox/tools/registry";
 import { sandboxProvider } from "~/server/sandbox/provider";
-import { getSandboxDiff } from "~/server/sandbox/tools/diff";
 import type {
   SandboxAgentInput,
   SandboxAgentMode,
@@ -1283,14 +1282,6 @@ async function resolveFinalSession(
   }
 }
 
-async function resolveFinalDiff(sessionId: string) {
-  try {
-    return await getSandboxDiff({ sessionId });
-  } catch {
-    return "";
-  }
-}
-
 function appendToolMessages(
   state: AgentRunState,
   toolCalls: AIToolCall[],
@@ -1487,14 +1478,13 @@ async function buildAgentResult(
   state: AgentRunState,
   result: Omit<
     SandboxAgentResult,
-    "diff" | "filesTouched" | "session" | "stepsUsed"
+    "filesTouched" | "session" | "stepsUsed"
   > & {
     failureCode?: AgentFailureCode;
   },
 ): Promise<SandboxAgentInternalResult> {
   return {
     ...result,
-    diff: await resolveFinalDiff(input.sessionId),
     filesTouched: Array.from(state.filesTouched).sort(),
     session: await resolveFinalSession(state, input.sessionId),
     stepsUsed: state.stepsUsed,
@@ -1509,7 +1499,6 @@ async function buildFailedResult(
   message: string,
 ): Promise<SandboxAgentInternalResult> {
   return {
-    diff: await resolveFinalDiff(input.sessionId),
     failureCode,
     filesTouched: Array.from(state.filesTouched).sort(),
     message,

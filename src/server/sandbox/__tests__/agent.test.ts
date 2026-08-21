@@ -400,6 +400,7 @@ describe("runSandboxAgent", () => {
     expect(modelSpans.map((span) => span.attributes["agent.step"])).toEqual([
       1, 2,
     ]);
+    expect(runCommandMock).not.toHaveBeenCalled();
     for (const span of modelSpans) {
       expect(span.kind).toBe(SpanKind.CLIENT);
       expect(span.parentSpanContext?.spanId).toBe(
@@ -1708,7 +1709,6 @@ describe("runSandboxAgent", () => {
     const result = await runSandboxAgent(baseInput);
 
     expect(result).toMatchObject({
-      diff: "diff --git a/src/data/projects.js b/src/data/projects.js",
       filesTouched: ["src/components/Hero.jsx"],
       message: "Updated the hero title.",
       session: mockSession,
@@ -2035,7 +2035,6 @@ describe("runSandboxAgent", () => {
     const result = await runSandboxAgent(baseInput);
 
     expect(result).toMatchObject({
-      diff: "diff --git a/src/data/projects.js b/src/data/projects.js",
       filesTouched: ["src/data/projects.js"],
       message: "Updated the projects data.",
       session: mockSession,

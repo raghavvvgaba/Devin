@@ -214,7 +214,6 @@ export type SandboxAgentInput = {
 
 export type SandboxAgentResult = {
   clarificationQuestion?: string;
-  diff: string;
   filesTouched: string[];
   message: string;
   session?: SandboxSession;
