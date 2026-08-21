@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import type {
   AIGenerateTextInput,
@@ -7,6 +14,7 @@ import type {
   AIToolCall,
 } from "~/server/ai/types";
 import type { SandboxAgentInput, SandboxSession } from "~/server/sandbox/types";
+import type { SandboxAgentTraceEvent } from "../agent-trace";
 import AGENT_FINISH_PROMPT_TEMPLATE from "../prompts/agent-finish.txt";
 import AGENT_MULTITOOL_RETRY_PROMPT_TEMPLATE from "../prompts/agent-multitool-retry.txt";
 import AGENT_SYSTEM_PROMPT_TEMPLATE from "../prompts/agent-system.txt";
@@ -39,6 +47,7 @@ vi.mock("~/server/ai/provider", () => ({
   aiProvider: {
     generateText: generateTextMock,
   },
+  aiProviderName: "openrouter",
 }));
 
 vi.mock("~/server/sandbox/provider", () => ({
@@ -136,6 +145,17 @@ vi.mock("~/server/sandbox/tools/registry", () => ({
 
 import { runSandboxAgent } from "../agent";
 
+const agentSpanExporter = new InMemorySpanExporter();
+const agentTraceProvider = new BasicTracerProvider({
+  spanProcessors: [new SimpleSpanProcessor(agentSpanExporter)],
+});
+
+trace.setGlobalTracerProvider(agentTraceProvider);
+
+afterAll(async () => {
+  await agentTraceProvider.shutdown();
+});
+
 const mockSession: SandboxSession = {
   environmentId: "env-test",
   logs: [],
@@ -147,6 +167,7 @@ const mockSession: SandboxSession = {
 
 const baseInput: SandboxAgentInput = {
   conversationHistory: [],
+  conversationSessionId: "chat-session-test",
   issueNumber: 16,
   issueTitle: "Replace HealSync with Tessera",
   mode: "build",
@@ -242,6 +263,7 @@ const expectedMultiToolRetryPrompt = formatPromptTemplate(
 );
 
 beforeEach(() => {
+  agentSpanExporter.reset();
   generateTextMock.mockReset();
   getSessionMock.mockReset();
   globToolExecuteMock.mockReset();
@@ -310,6 +332,334 @@ beforeEach(() => {
 });
 
 describe("runSandboxAgent", () => {
+  it("records one span for the complete agent run", async () => {
+    generateTextMock
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "The requested state is already present.",
+          usage: {
+            completionTokens: 20,
+            cost: 0.001,
+            promptTokens: 100,
+            totalTokens: 120,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: JSON.stringify({
+            message: "Nothing needed to change.",
+            status: "completed",
+          }),
+          usage: {
+            completionTokens: 10,
+            cost: 0.002,
+            promptTokens: 80,
+            totalTokens: 90,
+          },
+        }),
+      );
+
+    await runSandboxAgent({
+      ...baseInput,
+      model: "test-model",
+    });
+
+    const spans = agentSpanExporter.getFinishedSpans();
+    const agentRunSpan = spans.find((span) => span.name === "sandbox_agent.run");
+    const modelSpans = spans.filter((span) => span.name === "chat test-model");
+
+    expect(agentRunSpan).toMatchObject({
+      attributes: {
+        "agent.cost_usd": 0.003,
+        "agent.files_touched_count": 0,
+        "agent.mode": "build",
+        "agent.status": "completed",
+        "agent.steps_used": 2,
+        "conversation.session_id": "chat-session-test",
+        "gen_ai.operation.name": "invoke_agent",
+        "gen_ai.request.model": "test-model",
+        "gen_ai.usage.input_tokens": 180,
+        "gen_ai.usage.output_tokens": 30,
+        "gen_ai.usage.total_tokens": 210,
+        "issue.number": 16,
+      },
+      name: "sandbox_agent.run",
+      status: {
+        code: 1,
+      },
+    });
+    expect(agentRunSpan?.attributes["conversation.session_id"]).not.toBe(
+      baseInput.sessionId,
+    );
+    expect(modelSpans).toHaveLength(2);
+    expect(modelSpans.map((span) => span.attributes["agent.phase"])).toEqual([
+      "tool",
+      "finish",
+    ]);
+    expect(modelSpans.map((span) => span.attributes["agent.step"])).toEqual([
+      1, 2,
+    ]);
+    for (const span of modelSpans) {
+      expect(span.kind).toBe(SpanKind.CLIENT);
+      expect(span.parentSpanContext?.spanId).toBe(
+        agentRunSpan?.spanContext().spanId,
+      );
+      expect(span.spanContext().traceId).toBe(
+        agentRunSpan?.spanContext().traceId,
+      );
+    }
+  });
+
+  it("correlates runs by conversation session without sharing trace IDs", async () => {
+    generateTextMock.mockResolvedValue(
+      createModelResponse({
+        text: JSON.stringify({
+          message: "Nothing needed to change.",
+          status: "completed",
+        }),
+      }),
+    );
+
+    await runSandboxAgent(baseInput);
+    await runSandboxAgent(baseInput);
+    await runSandboxAgent({
+      ...baseInput,
+      conversationSessionId: "chat-session-other",
+    });
+
+    const spans = agentSpanExporter
+      .getFinishedSpans()
+      .filter((span) => span.name === "sandbox_agent.run");
+    const conversationSessionIds = spans.map(
+      (span) => span.attributes["conversation.session_id"],
+    );
+    const traceIds = spans.map((span) => span.spanContext().traceId);
+
+    expect(conversationSessionIds).toEqual([
+      "chat-session-test",
+      "chat-session-test",
+      "chat-session-other",
+    ]);
+    expect(new Set(traceIds)).toHaveLength(3);
+  });
+
+  it("creates semantic model and tool spans beneath the agent run", async () => {
+    const traceEvents: SandboxAgentTraceEvent[] = [];
+    const secret = "sk-abcdefghijklmnopqrstuvwxyz123456";
+
+    readToolExecuteMock.mockResolvedValueOnce({
+      content: `Bearer ${secret}`,
+      endLine: 4,
+      path: "src/components/Button.tsx",
+      size: 120,
+      startLine: 1,
+      totalLines: 4,
+      truncated: false,
+    });
+    generateTextMock
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: `I'll inspect the file using ${secret}.`,
+          toolCalls: [
+            createToolCall(
+              "read_file",
+              {
+                path: "src/components/Button.tsx",
+                token: secret,
+              },
+              "call-read",
+            ),
+          ],
+          usage: {
+            completionTokens: 20,
+            cost: 0.001,
+            promptTokens: 100,
+            reasoningTokens: 4,
+            totalTokens: 120,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "The file is already correct.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: JSON.stringify({
+            message: "Nothing needed to change.",
+            status: "completed",
+          }),
+        }),
+      );
+
+    await runSandboxAgent(
+      {
+        ...baseInput,
+        model: "test-model",
+      },
+      {
+        onTrace(event) {
+          traceEvents.push(event);
+        },
+      },
+    );
+
+    const spans = agentSpanExporter.getFinishedSpans();
+    const agentRunSpan = spans.find((span) => span.name === "sandbox_agent.run");
+    const childSpans = spans.filter(
+      (span) =>
+        span.parentSpanContext?.spanId === agentRunSpan?.spanContext().spanId,
+    );
+    const modelSpans = childSpans.filter(
+      (span) => span.name === "chat test-model",
+    );
+    const toolSpan = childSpans.find(
+      (span) => span.name === "execute_tool read_file",
+    );
+
+    expect(childSpans.map((span) => span.name)).toEqual([
+      "chat test-model",
+      "execute_tool read_file",
+      "chat test-model",
+      "chat test-model",
+    ]);
+    expect(modelSpans.map((span) => span.attributes["agent.phase"])).toEqual([
+      "tool",
+      "tool",
+      "finish",
+    ]);
+    expect(modelSpans.map((span) => span.attributes["agent.step"])).toEqual([
+      1, 2, 3,
+    ]);
+    expect(modelSpans[0]).toMatchObject({
+      attributes: {
+        "agent.cost_usd": 0.001,
+        "agent.model.status": "completed",
+        "agent.model.tool_call_count": 1,
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "openrouter",
+        "gen_ai.request.model": "test-model",
+        "gen_ai.response.model": "test-model",
+        "gen_ai.usage.input_tokens": 100,
+        "gen_ai.usage.output_tokens": 20,
+        "gen_ai.usage.reasoning.output_tokens": 4,
+        "gen_ai.usage.total_tokens": 120,
+      },
+      kind: SpanKind.CLIENT,
+      status: { code: SpanStatusCode.OK },
+    });
+    expect(modelSpans[0]?.attributes["agent.model.response_preview"]).toContain(
+      "[REDACTED]",
+    );
+    expect(
+      modelSpans[0]?.attributes["agent.model.tool_calls_preview"],
+    ).toContain("[REDACTED]");
+    expect(JSON.stringify(modelSpans[0]?.attributes)).not.toContain(secret);
+
+    expect(toolSpan).toMatchObject({
+      attributes: {
+        "agent.step": 1,
+        "agent.tool.paths": ["src/components/Button.tsx"],
+        "agent.tool.status": "ok",
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.call.id": "call-read",
+        "gen_ai.tool.name": "read_file",
+        "gen_ai.tool.type": "function",
+      },
+      kind: SpanKind.INTERNAL,
+      status: { code: SpanStatusCode.OK },
+    });
+    expect(toolSpan?.attributes["agent.tool.arguments_preview"]).toContain(
+      "[REDACTED]",
+    );
+    expect(toolSpan?.attributes["agent.tool.result_preview"]).toContain(
+      "[REDACTED]",
+    );
+    expect(JSON.stringify(toolSpan?.attributes)).not.toContain(secret);
+    expect(toolSpan?.spanContext().traceId).toBe(
+      agentRunSpan?.spanContext().traceId,
+    );
+
+    expect(traceEvents.map((event) => event.type)).toContain("model_response");
+    expect(traceEvents.map((event) => event.type)).toContain("tool_result");
+    expect(
+      traceEvents.find((event) => event.type === "tool_result"),
+    ).toMatchObject({
+      payload: {
+        arguments: {
+          path: "src/components/Button.tsx",
+          token: "[REDACTED]",
+        },
+      },
+      toolCallId: "call-read",
+      toolName: "read_file",
+    });
+  });
+
+  it("marks model and tool failures on their semantic spans", async () => {
+    generateTextMock.mockRejectedValueOnce(
+      new Error("OpenRouter rate limited this request"),
+    );
+
+    await runSandboxAgent({
+      ...baseInput,
+      model: "test-model",
+    });
+
+    const modelFailureSpan = agentSpanExporter
+      .getFinishedSpans()
+      .find((span) => span.name === "chat test-model");
+
+    expect(modelFailureSpan).toMatchObject({
+      attributes: {
+        "agent.model.status": "failed",
+        "error.type": "model_rate_limited",
+      },
+      status: {
+        code: SpanStatusCode.ERROR,
+        message: "The AI model is rate limited right now. Please try again.",
+      },
+    });
+
+    agentSpanExporter.reset();
+    generateTextMock
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "I'll try an unsupported tool.",
+          toolCalls: [createToolCall("unknown_tool", {}, "call-unknown")],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({ text: "I'll stop here." }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: JSON.stringify({
+            message: "The unsupported tool was not executed.",
+            status: "blocked",
+          }),
+        }),
+      );
+
+    await runSandboxAgent(baseInput);
+
+    const toolFailureSpan = agentSpanExporter
+      .getFinishedSpans()
+      .find((span) => span.name === "execute_tool unknown_tool");
+
+    expect(toolFailureSpan).toMatchObject({
+      attributes: {
+        "agent.tool.status": "tool_failure",
+        "error.type": "unknown_tool",
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "unknown_tool",
+      },
+      status: { code: SpanStatusCode.ERROR },
+    });
+  });
+
   it("places persisted conversation history before the current instruction", async () => {
     generateTextMock
       .mockResolvedValueOnce(
@@ -659,6 +1009,27 @@ describe("runSandboxAgent", () => {
       content: expectedSystemPrompt,
       role: "system",
     });
+
+    const agentRunSpan = agentSpanExporter
+      .getFinishedSpans()
+      .find((span) => span.name === "sandbox_agent.run");
+    const toolSpans = agentSpanExporter
+      .getFinishedSpans()
+      .filter((span) => span.name.startsWith("execute_tool "));
+
+    expect(toolSpans.map((span) => span.name)).toEqual([
+      "execute_tool list_directory",
+      "execute_tool read_file",
+    ]);
+    expect(toolSpans.map((span) => span.attributes["agent.step"])).toEqual([
+      1, 1,
+    ]);
+    expect(
+      toolSpans.map((span) => span.parentSpanContext?.spanId),
+    ).toEqual([
+      agentRunSpan?.spanContext().spanId,
+      agentRunSpan?.spanContext().spanId,
+    ]);
   });
 
   it("accepts glob_files in a read-only batch", async () => {
@@ -1314,7 +1685,6 @@ describe("runSandboxAgent", () => {
                 newText: "Full stack + AI engineer",
                 oldText: "Full stack developer",
                 path: "src/components/Hero.jsx",
-                startLine: 148,
               },
               "call-replace",
             ),
@@ -1350,7 +1720,6 @@ describe("runSandboxAgent", () => {
         newText: "Full stack + AI engineer",
         oldText: "Full stack developer",
         path: "src/components/Hero.jsx",
-        startLine: 148,
       },
       {
         sessionId: "session-test",
@@ -1371,7 +1740,6 @@ describe("runSandboxAgent", () => {
                 newText: "Full stack + AI engineer",
                 oldText: "Full stack developer",
                 path: "src/components/Hero.jsx",
-                startLine: 148,
               },
               "call-replace",
             ),
@@ -1389,7 +1757,6 @@ describe("runSandboxAgent", () => {
                 newText: "Full stack + AI engineer",
                 oldText: "Full stack developer",
                 path: "src/components/Hero.jsx",
-                startLine: 148,
               },
               "call-replace-2",
             ),
@@ -1411,7 +1778,7 @@ describe("runSandboxAgent", () => {
 
   it("feeds replace_in_file failure back as structured tool JSON and lets the model recover", async () => {
     replaceToolExecuteMock
-      .mockRejectedValueOnce(new Error("line_text_mismatch"))
+      .mockRejectedValueOnce(new Error("text_not_found"))
       .mockResolvedValueOnce({
         newText: "Full stack + AI engineer",
         oldText: "Full stack developer",
@@ -1423,7 +1790,7 @@ describe("runSandboxAgent", () => {
     generateTextMock
       .mockResolvedValueOnce(
         createModelResponse({
-          text: "I'll replace the line I found.",
+          text: "I'll replace the exact text I found.",
           toolCalls: [
             createToolCall(
               "replace_in_file",
@@ -1431,7 +1798,6 @@ describe("runSandboxAgent", () => {
                 newText: "Full stack + AI engineer",
                 oldText: "Full stack developer",
                 path: "src/components/Hero.jsx",
-                startLine: 148,
               },
               "call-replace-fail",
             ),
@@ -1440,15 +1806,14 @@ describe("runSandboxAgent", () => {
       )
       .mockResolvedValueOnce(
         createModelResponse({
-          text: "I'll retry on the corrected line.",
+          text: "I'll retry with more surrounding text.",
           toolCalls: [
             createToolCall(
               "replace_in_file",
               {
-                newText: "Full stack + AI engineer",
-                oldText: "Full stack developer",
+                newText: "title: Full stack + AI engineer",
+                oldText: "title: Full stack developer",
                 path: "src/components/Hero.jsx",
-                startLine: 149,
               },
               "call-replace-retry",
             ),
@@ -1463,7 +1828,7 @@ describe("runSandboxAgent", () => {
       .mockResolvedValueOnce(
         createModelResponse({
           text: JSON.stringify({
-            message: "Updated the hero title after retrying the correct line.",
+            message: "Updated the hero title with a unique exact match.",
             status: "completed",
           }),
         }),
@@ -1474,7 +1839,7 @@ describe("runSandboxAgent", () => {
 
     expect(result).toMatchObject({
       filesTouched: ["src/components/Hero.jsx"],
-      message: "Updated the hero title after retrying the correct line.",
+      message: "Updated the hero title with a unique exact match.",
       status: "completed",
       stepsUsed: 4,
     });
@@ -1484,14 +1849,156 @@ describe("runSandboxAgent", () => {
         newText: "Full stack + AI engineer",
         oldText: "Full stack developer",
         path: "src/components/Hero.jsx",
-        startLine: 148,
       },
-      code: "line_text_mismatch",
-      message: "line_text_mismatch",
+      code: "text_not_found",
+      message: "text_not_found",
       ok: false,
       retryable: true,
       tool: "replace_in_file",
     });
+  });
+
+  it("forces one focused retry after malformed replace_in_file arguments", async () => {
+    const replaceSchema = z.object({
+      newText: z.string(),
+      oldText: z.string(),
+      path: z.string(),
+    });
+    const invalidArguments = {
+      oldText: "Full stack developer",
+      path: "src/components/Hero.jsx",
+    };
+    const validationError = replaceSchema.safeParse(invalidArguments).error;
+
+    replaceToolExecuteMock
+      .mockRejectedValueOnce(validationError)
+      .mockResolvedValueOnce({
+        newText: "Full stack + AI engineer",
+        oldText: "Full stack developer",
+        path: "src/components/Hero.jsx",
+        session: mockSession,
+        startLine: 148,
+      });
+
+    generateTextMock
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "I'll update the hero title.",
+          toolCalls: [
+            createToolCall(
+              "replace_in_file",
+              invalidArguments,
+              "call-malformed-replace",
+            ),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "I'll retry with every required field.",
+          toolCalls: [
+            createToolCall(
+              "replace_in_file",
+              {
+                ...invalidArguments,
+                newText: "Full stack + AI engineer",
+              },
+              "call-corrected-replace",
+            ),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "Done. I updated the hero title.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: JSON.stringify({
+            message: "Updated the hero title after correcting the tool call.",
+            status: "completed",
+          }),
+        }),
+      );
+
+    const result = await runSandboxAgent(baseInput);
+    const repairCall = getModelCall(1);
+    const repairPrompt = repairCall?.messages.find(
+      (message) =>
+        message.role === "user" &&
+        message.content.includes("invalid arguments and was not executed"),
+    );
+
+    expect(result).toMatchObject({
+      filesTouched: ["src/components/Hero.jsx"],
+      status: "completed",
+      stepsUsed: 4,
+    });
+    expect(repairCall?.toolChoice).toEqual({
+      function: { name: "replace_in_file" },
+      type: "function",
+    });
+    expect(repairPrompt).toMatchObject({ role: "user" });
+    expect(repairPrompt?.content).toContain(
+      "invalid arguments and was not executed",
+    );
+    expect(repairPrompt?.content).toContain("include every required field");
+    expect(replaceToolExecuteMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not force more than one focused retry for repeated malformed arguments", async () => {
+    const invalidArguments = {
+      oldText: "Full stack developer",
+      path: "src/components/Hero.jsx",
+    };
+    const validationError = z
+      .object({
+        newText: z.string(),
+        oldText: z.string(),
+        path: z.string(),
+      })
+      .safeParse(invalidArguments).error;
+
+    replaceToolExecuteMock.mockRejectedValue(validationError);
+
+    for (let index = 0; index < 3; index += 1) {
+      generateTextMock.mockResolvedValueOnce(
+        createModelResponse({
+          text: "I'll retry the replacement.",
+          toolCalls: [
+            createToolCall(
+              "replace_in_file",
+              invalidArguments,
+              `call-malformed-${index}`,
+            ),
+          ],
+        }),
+      );
+    }
+    generateTextMock.mockResolvedValueOnce(
+      createModelResponse({
+        text: JSON.stringify({
+          message: "I could not produce valid replacement arguments.",
+          status: "blocked",
+        }),
+      }),
+    );
+
+    const result = await runSandboxAgent(baseInput);
+
+    expect(result).toMatchObject({
+      failureCode: "tool_retry_exhausted",
+      status: "blocked",
+      stepsUsed: 4,
+    });
+    expect(getModelCall(0)?.toolChoice).toBe("auto");
+    expect(getModelCall(1)?.toolChoice).toEqual({
+      function: { name: "replace_in_file" },
+      type: "function",
+    });
+    expect(getModelCall(2)?.toolChoice).toBe("auto");
+    expect(replaceToolExecuteMock).toHaveBeenCalledTimes(3);
   });
 
   it("keeps write_file as a single-call turn", async () => {

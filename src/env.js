@@ -21,6 +21,14 @@ export const env = createEnv({
     OPENCODE_API_KEY: z.string().min(1).optional(),
     OPENCODE_GO_MODEL: z.string().min(1).optional(),
     AI_PROVIDER: z.enum(["openrouter", "opencode-go"]).default("openrouter"),
+    OTEL_SERVICE_NAME: z.string().min(1).default("inlaya-agent"),
+    OTEL_TRACES_EXPORTER: z
+      .enum(["console", "none", "otlp"])
+      .default("otlp"),
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z
+      .string()
+      .url()
+      .default("http://localhost:4318/v1/traces"),
     E2B_API_KEY: z.string().min(1).optional(),
     E2B_SANDBOX_TEMPLATE: z
       .string()
@@ -62,6 +70,10 @@ export const env = createEnv({
     OPENCODE_API_KEY: process.env.OPENCODE_API_KEY,
     OPENCODE_GO_MODEL: process.env.OPENCODE_GO_MODEL,
     AI_PROVIDER: process.env.AI_PROVIDER,
+    OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
+    OTEL_TRACES_EXPORTER: process.env.OTEL_TRACES_EXPORTER,
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
+      process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
     E2B_API_KEY: process.env.E2B_API_KEY,
     E2B_SANDBOX_TEMPLATE: process.env.E2B_SANDBOX_TEMPLATE,
     NODE_ENV: process.env.NODE_ENV,

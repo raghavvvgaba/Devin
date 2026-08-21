@@ -1,14 +1,22 @@
 import "server-only";
 
+import {
+  context,
+  SpanKind,
+  SpanStatusCode,
+  trace,
+  type Span,
+} from "@opentelemetry/api";
 import { z } from "zod";
 
 import type {
   AIUsage,
   AIMessage,
+  AIToolChoice,
   AIToolCall,
   AIGenerateTextResult,
 } from "~/server/ai/types";
-import { aiProvider } from "~/server/ai/provider";
+import { aiProvider, aiProviderName } from "~/server/ai/provider";
 import {
   buildToolProgressMessage,
   shouldShowModelProgressText,
@@ -18,6 +26,7 @@ import {
   collectToolPaths,
   parseToolArgumentsForTrace,
   parseToolResultForTrace,
+  sanitizeTracePayload,
   sanitizeToolArguments,
   toTracePreview,
   type SandboxAgentTraceEvent,
@@ -54,6 +63,8 @@ const MAX_AGENT_MESSAGE_LENGTH = 1_200;
 const MAX_READ_ONLY_TOOL_CALLS = 5;
 const MAX_RECOVERY_TURNS = 5;
 const MAX_SAME_FAILURE_REPEATS = 3;
+
+const sandboxAgentTracer = trace.getTracer("inlaya.sandbox-agent");
 
 const sandboxAgentModelTools = buildSandboxAgentModelTools();
 const sandboxAgentToolIds = sandboxAgentModelTools.map(
@@ -95,6 +106,7 @@ type AgentRunState = {
   recentEvents: string[];
   recoveryTurnsUsed: number;
   sameFailureRepeatCount: number;
+  pendingArgumentRepairTool?: SandboxAgentToolName;
   stepsUsed: number;
   transcript: AIMessage[];
   usage?: AIUsage;
@@ -109,6 +121,7 @@ type AgentToolSuccess = {
 };
 
 type AgentToolFailure = {
+  argumentValidationFailure: boolean;
   code: string;
   latestObservation: string;
   message: string;
@@ -178,6 +191,134 @@ type RunSandboxAgentOptions = {
   onProgress?: SandboxAgentProgressHandler;
   onTrace?: SandboxAgentTraceHandler;
 };
+
+type RunSandboxAgentLoopOptions = RunSandboxAgentOptions & {
+  agentRunSpan: Span;
+};
+
+type AgentModelTraceSummary = {
+  hasText: boolean;
+  textPreview: string | null;
+  toolCalls: Array<{
+    arguments: Record<string, unknown>;
+    argumentsPreview: string;
+    id: string;
+    name: string;
+  }>;
+};
+
+type AgentToolTraceSummary = {
+  arguments: Record<string, unknown>;
+  argumentsPreview: string;
+  latestObservationPreview: string | null;
+  paths: string[];
+  resultPreview: string | null;
+};
+
+function buildAgentModelTraceSummary(
+  response: AIGenerateTextResult,
+): AgentModelTraceSummary {
+  return {
+    hasText: Boolean(response.text.trim()),
+    textPreview: response.text.trim()
+      ? toTracePreview(response.text, 220)
+      : null,
+    toolCalls:
+      response.toolCalls?.map((toolCall) => {
+        const argumentsValue = parseToolArgumentsForTrace(
+          toolCall.function.arguments,
+        );
+        const safeArguments = sanitizeToolArguments(
+          toolCall.function.name,
+          argumentsValue,
+        );
+
+        return {
+          arguments: safeArguments,
+          argumentsPreview: toTracePreview(
+            JSON.stringify(safeArguments),
+            160,
+          ),
+          id: toolCall.id,
+          name: toolCall.function.name,
+        };
+      }) ?? [],
+  };
+}
+
+function buildAgentToolTraceSummary(
+  toolCall: AIToolCall,
+  result: AgentToolExecutionResult,
+): AgentToolTraceSummary {
+  const argumentsValue = parseToolArgumentsForTrace(
+    toolCall.function.arguments,
+  );
+  const safeArguments = sanitizeToolArguments(
+    toolCall.function.name,
+    argumentsValue,
+  );
+  const toolMessageContent =
+    "toolMessageContent" in result ? result.toolMessageContent : undefined;
+  const resultValue = parseToolResultForTrace(toolMessageContent);
+  const safeResult = sanitizeTracePayload({ result: resultValue }).result;
+
+  return {
+    arguments: safeArguments,
+    argumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
+    latestObservationPreview:
+      "latestObservation" in result
+        ? toTracePreview(result.latestObservation, 220)
+        : null,
+    paths: collectToolPaths({
+      argumentsValue,
+      resultValue,
+      touchedPath: "touchedPath" in result ? result.touchedPath : undefined,
+    }),
+    resultPreview:
+      safeResult === undefined
+        ? null
+        : toTracePreview(JSON.stringify(safeResult), 220),
+  };
+}
+
+function recordAgentRunSpanResult(
+  span: Span,
+  result: SandboxAgentInternalResult,
+) {
+  span.setAttributes({
+    "agent.files_touched_count": result.filesTouched.length,
+    "agent.status": result.status,
+    "agent.steps_used": result.stepsUsed,
+  });
+
+  if (result.failureCode) {
+    span.setAttribute("agent.failure_code", result.failureCode);
+  }
+
+  if (result.usage) {
+    span.setAttributes({
+      "gen_ai.usage.input_tokens": result.usage.promptTokens,
+      "gen_ai.usage.output_tokens": result.usage.completionTokens,
+      "gen_ai.usage.total_tokens": result.usage.totalTokens,
+    });
+
+    if (result.usage.reasoningTokens !== undefined) {
+      span.setAttribute(
+        "gen_ai.usage.reasoning_tokens",
+        result.usage.reasoningTokens,
+      );
+    }
+
+    if (result.usage.cost !== undefined) {
+      span.setAttribute("agent.cost_usd", result.usage.cost);
+    }
+  }
+
+  span.setStatus({
+    code:
+      result.status === "failed" ? SpanStatusCode.ERROR : SpanStatusCode.OK,
+  });
+}
 
 function hasToolMessageContent(
   result: AgentToolExecutionResult,
@@ -363,8 +504,10 @@ function buildToolFailureResult(
   tool: SandboxAgentToolName,
   message: string,
   argumentsValue: Record<string, unknown>,
+  argumentValidationFailure = false,
 ): AgentToolFailure {
   return {
+    argumentValidationFailure,
     code: message,
     latestObservation: formatToolFeedback(tool, message),
     message,
@@ -390,6 +533,7 @@ function buildPlanModeWriteFailureResult(
     "This workspace is in Plan mode. File edits are unavailable. Do not retry the write. Continue with read-only analysis and tell the user to switch to Build mode when they want the changes applied.";
 
   return {
+    argumentValidationFailure: false,
     code,
     latestObservation: formatToolFeedback(tool, message),
     message,
@@ -435,6 +579,102 @@ function mapModelError(error: unknown): {
     code: "internal_error",
     message: "The agent could not continue because the model request failed.",
   };
+}
+
+async function traceAgentModelRequest(input: {
+  generate: () => Promise<AIGenerateTextResult>;
+  parentSpan: Span;
+  phase: AgentModelPhase;
+  requestedModel?: string;
+  step: number;
+}) {
+  const spanName = input.requestedModel
+    ? `chat ${input.requestedModel}`
+    : "chat";
+
+  return sandboxAgentTracer.startActiveSpan(
+    spanName,
+    {
+      attributes: {
+        "agent.phase": input.phase,
+        "agent.step": input.step,
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": aiProviderName,
+        ...(input.requestedModel
+          ? { "gen_ai.request.model": input.requestedModel }
+          : {}),
+      },
+      kind: SpanKind.CLIENT,
+    },
+    trace.setSpan(context.active(), input.parentSpan),
+    async (span) => {
+      try {
+        const response = await input.generate();
+        const summary = buildAgentModelTraceSummary(response);
+
+        span.updateName(`chat ${response.model}`);
+        span.setAttributes({
+          "agent.model.has_text": summary.hasText,
+          "agent.model.status": "completed",
+          "agent.model.tool_call_count": summary.toolCalls.length,
+          "gen_ai.response.model": response.model,
+        });
+
+        if (summary.textPreview) {
+          span.setAttribute(
+            "agent.model.response_preview",
+            summary.textPreview,
+          );
+        }
+
+        if (summary.toolCalls.length > 0) {
+          span.setAttribute(
+            "agent.model.tool_calls_preview",
+            toTracePreview(JSON.stringify(summary.toolCalls), 500),
+          );
+        }
+
+        if (response.usage) {
+          span.setAttributes({
+            "gen_ai.usage.input_tokens": response.usage.promptTokens,
+            "gen_ai.usage.output_tokens": response.usage.completionTokens,
+            "gen_ai.usage.total_tokens": response.usage.totalTokens,
+          });
+
+          if (response.usage.reasoningTokens !== undefined) {
+            span.setAttribute(
+              "gen_ai.usage.reasoning.output_tokens",
+              response.usage.reasoningTokens,
+            );
+          }
+
+          if (response.usage.cost !== undefined) {
+            span.setAttribute("agent.cost_usd", response.usage.cost);
+          }
+        }
+
+        span.setStatus({ code: SpanStatusCode.OK });
+        return response;
+      } catch (error) {
+        const exception =
+          error instanceof Error ? error : new Error(String(error));
+        const mappedError = mapModelError(error);
+
+        span.recordException(exception);
+        span.setAttributes({
+          "agent.model.status": "failed",
+          "error.type": mappedError.code,
+        });
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: mappedError.message,
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }
 
 function isSandboxAgentToolName(value: string): value is SandboxAgentToolName {
@@ -538,6 +778,7 @@ function buildUnknownToolFailureResult(
   const message = `The "${toolName}" tool does not exist. Use one of the available tools instead: ${availableTools}.`;
 
   return {
+    argumentValidationFailure: false,
     code: "unknown_tool",
     latestObservation: [
       `The previous ${toolName} call failed.`,
@@ -581,34 +822,15 @@ async function recordAgentModelResponse(
   durationMs: number,
   options: RunSandboxAgentOptions,
 ) {
-  const textPreview = response.text.trim()
-    ? toTracePreview(response.text, 220)
-    : null;
-  const toolCalls =
-    response.toolCalls?.map((toolCall) => {
-      const argumentsValue = parseToolArgumentsForTrace(
-        toolCall.function.arguments,
-      );
-      const safeArguments = sanitizeToolArguments(
-        toolCall.function.name,
-        argumentsValue,
-      );
-
-      return {
-        arguments: safeArguments,
-        argumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
-        id: toolCall.id,
-        name: toolCall.function.name,
-      };
-    }) ?? [];
+  const summary = buildAgentModelTraceSummary(response);
 
   await emitAgentTrace(options.onTrace, {
     durationMs,
     model: response.model,
     payload: {
-      hasText: Boolean(response.text.trim()),
-      textPreview,
-      toolCalls,
+      hasText: summary.hasText,
+      textPreview: summary.textPreview,
+      toolCalls: summary.toolCalls,
     },
     phase,
     status: "completed",
@@ -619,14 +841,14 @@ async function recordAgentModelResponse(
 
   console.log("Sandbox agent model response:", {
     durationMs,
-    hasText: Boolean(response.text.trim()),
+    hasText: summary.hasText,
     issueNumber: input.issueNumber,
     model: response.model,
     phase,
     projectId: input.projectId,
     step,
-    textPreview,
-    toolCalls,
+    textPreview: summary.textPreview,
+    toolCalls: summary.toolCalls,
     usage: response.usage,
   });
 }
@@ -639,41 +861,20 @@ async function recordAgentToolResult(
   durationMs: number,
   options: RunSandboxAgentOptions,
 ) {
-  const argumentsValue = parseToolArgumentsForTrace(
-    toolCall.function.arguments,
-  );
-  const safeArguments = sanitizeToolArguments(
-    toolCall.function.name,
-    argumentsValue,
-  );
-  const toolMessageContent =
-    "toolMessageContent" in result ? result.toolMessageContent : undefined;
-  const resultValue = parseToolResultForTrace(toolMessageContent);
-  const latestObservationPreview =
-    "latestObservation" in result
-      ? toTracePreview(result.latestObservation, 220)
-      : null;
-  const toolMessagePreview = toolMessageContent
-    ? toTracePreview(toolMessageContent, 220)
-    : null;
-  const paths = collectToolPaths({
-    argumentsValue,
-    resultValue,
-    touchedPath: "touchedPath" in result ? result.touchedPath : undefined,
-  });
+  const summary = buildAgentToolTraceSummary(toolCall, result);
 
   await emitAgentTrace(options.onTrace, {
     durationMs,
     level: result.status === "ok" ? "info" : "warn",
-    paths,
+    paths: summary.paths,
     payload: {
-      arguments: safeArguments,
-      argumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
+      arguments: summary.arguments,
+      argumentsPreview: summary.argumentsPreview,
       code: "code" in result ? result.code : undefined,
-      latestObservationPreview,
+      latestObservationPreview: summary.latestObservationPreview,
       message: "message" in result ? result.message : undefined,
       recentEvent: result.recentEvent,
-      toolMessagePreview,
+      toolMessagePreview: summary.resultPreview,
     },
     status: result.status,
     step,
@@ -685,15 +886,15 @@ async function recordAgentToolResult(
   console.log("Sandbox agent tool result:", {
     durationMs,
     issueNumber: input.issueNumber,
-    latestObservationPreview,
-    paths,
+    latestObservationPreview: summary.latestObservationPreview,
+    paths: summary.paths,
     projectId: input.projectId,
     recentEvent: result.recentEvent,
     status: result.status,
     step,
     tool: toolCall.function.name,
-    toolArgumentsPreview: toTracePreview(JSON.stringify(safeArguments), 160),
-    toolMessagePreview,
+    toolArgumentsPreview: summary.argumentsPreview,
+    toolMessagePreview: summary.resultPreview,
   });
 }
 
@@ -783,7 +984,10 @@ function mergeUsage(previous: AIUsage | undefined, next: AIUsage | undefined) {
 async function callAgentToolTurn(
   state: AgentRunState,
   mode: SandboxAgentMode,
+  parentSpan: Span,
   model?: string,
+  step = state.stepsUsed + 1,
+  toolChoice: AIToolChoice = "auto",
 ): Promise<AIGenerateTextResult> {
   const tools =
     mode === "plan"
@@ -792,45 +996,61 @@ async function callAgentToolTurn(
         )
       : sandboxAgentModelTools;
 
-  return aiProvider.generateText({
-    maxTokens: 1_500,
-    messages: state.transcript,
-    ...(model ? { model } : {}),
-    temperature: 0.1,
-    toolChoice: "auto",
-    tools,
+  return traceAgentModelRequest({
+    generate: () =>
+      aiProvider.generateText({
+        maxTokens: 1_500,
+        messages: state.transcript,
+        ...(model ? { model } : {}),
+        temperature: 0.1,
+        toolChoice,
+        tools,
+      }),
+    parentSpan,
+    phase: "tool",
+    requestedModel: model,
+    step,
   });
 }
 
 async function callAgentFinishTurn(
   state: AgentRunState,
   finishPrompt: string,
+  parentSpan: Span,
   model?: string,
+  step = state.stepsUsed + 1,
 ): Promise<AIGenerateTextResult> {
-  return aiProvider.generateText({
-    maxTokens: 1_500,
-    messages: [
-      ...state.transcript,
-      {
-        content: finishPrompt,
-        role: "user",
-      },
-    ],
-    ...(model ? { model } : {}),
-    responseFormat: {
-      type: "json_schema",
-      jsonSchema: {
-        name: "sandbox_agent_finish",
-        schema: buildFinishResponseSchema(),
-        strict: true,
-      },
-    },
-    temperature: 0.1,
-    toolChoice: "none",
+  return traceAgentModelRequest({
+    generate: () =>
+      aiProvider.generateText({
+        maxTokens: 1_500,
+        messages: [
+          ...state.transcript,
+          {
+            content: finishPrompt,
+            role: "user",
+          },
+        ],
+        ...(model ? { model } : {}),
+        responseFormat: {
+          type: "json_schema",
+          jsonSchema: {
+            name: "sandbox_agent_finish",
+            schema: buildFinishResponseSchema(),
+            strict: true,
+          },
+        },
+        temperature: 0.1,
+        toolChoice: "none",
+      }),
+    parentSpan,
+    phase: "finish",
+    requestedModel: model,
+    step,
   });
 }
 
-async function executeToolCall(
+async function executeToolCallCore(
   toolCall: AIToolCall,
   sessionId: string,
   mode: SandboxAgentMode,
@@ -945,6 +1165,8 @@ async function executeToolCall(
       status: "internal_fatal_failure",
     };
   } catch (error) {
+    const argumentValidationFailure =
+      error instanceof SyntaxError || error instanceof z.ZodError;
     const argumentsValue =
       error instanceof SyntaxError
         ? { _raw: toolCall.function.arguments }
@@ -954,8 +1176,97 @@ async function executeToolCall(
         ? "invalid_tool_arguments_json"
         : normalizeToolErrorMessage(error);
 
-    return buildToolFailureResult(toolName, message, argumentsValue);
+    return buildToolFailureResult(
+      toolName,
+      message,
+      argumentsValue,
+      argumentValidationFailure,
+    );
   }
+}
+
+async function executeToolCall(
+  toolCall: AIToolCall,
+  sessionId: string,
+  mode: SandboxAgentMode,
+  step: number,
+  parentSpan: Span,
+): Promise<AgentToolExecutionResult> {
+  const toolName = toolCall.function.name;
+  const argumentsValue = parseToolArgumentsForTrace(
+    toolCall.function.arguments,
+  );
+  const safeArguments = sanitizeToolArguments(toolName, argumentsValue);
+
+  return sandboxAgentTracer.startActiveSpan(
+    `execute_tool ${toolName}`,
+    {
+      attributes: {
+        "agent.step": step,
+        "agent.tool.arguments_preview": toTracePreview(
+          JSON.stringify(safeArguments),
+          160,
+        ),
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.call.id": toolCall.id,
+        "gen_ai.tool.name": toolName,
+        "gen_ai.tool.type": "function",
+      },
+      kind: SpanKind.INTERNAL,
+    },
+    trace.setSpan(context.active(), parentSpan),
+    async (span) => {
+      try {
+        const result = await executeToolCallCore(toolCall, sessionId, mode);
+        const summary = buildAgentToolTraceSummary(toolCall, result);
+
+        span.setAttribute("agent.tool.status", result.status);
+
+        if (summary.paths.length > 0) {
+          span.setAttribute("agent.tool.paths", summary.paths);
+        }
+
+        if (summary.latestObservationPreview) {
+          span.setAttribute(
+            "agent.tool.observation_preview",
+            summary.latestObservationPreview,
+          );
+        }
+
+        if (summary.resultPreview) {
+          span.setAttribute("agent.tool.result_preview", summary.resultPreview);
+        }
+
+        if (result.status === "ok") {
+          span.setStatus({ code: SpanStatusCode.OK });
+        } else {
+          span.setAttribute("error.type", result.code);
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: result.message,
+          });
+        }
+
+        return result;
+      } catch (error) {
+        const exception =
+          error instanceof Error ? error : new Error(String(error));
+
+        span.recordException(exception);
+        span.setAttributes({
+          "agent.tool.status": "failed",
+          "error.type": exception.name || "Error",
+        });
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: toTracePreview(exception.message, 220),
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }
 
 async function resolveFinalSession(
@@ -1020,6 +1331,28 @@ function appendUserMessage(state: AgentRunState, content: string) {
     content,
     role: "user",
   });
+}
+
+function queueArgumentRepair(
+  state: AgentRunState,
+  failure: AgentToolFailure,
+  toolName: SandboxAgentToolName,
+  allowRepair: boolean,
+) {
+  if (!allowRepair || !failure.argumentValidationFailure) {
+    return;
+  }
+
+  appendUserMessage(
+    state,
+    [
+      `The previous ${toolName} call had invalid arguments and was not executed.`,
+      "Review the validation error in the preceding tool result.",
+      `Retry ${toolName} once with JSON arguments that match its schema and include every required field.`,
+      "Do not omit, guess, or invent argument values.",
+    ].join(" "),
+  );
+  state.pendingArgumentRepairTool = toolName;
 }
 
 function buildBatchObservation(executed: ExecutedAgentTool[]) {
@@ -1093,6 +1426,8 @@ async function executeReadOnlyBatch(
   toolCalls: AIToolCall[],
   sessionId: string,
   mode: SandboxAgentMode,
+  step: number,
+  parentSpan: Span,
 ): Promise<AgentToolBatchResult> {
   const executed: ExecutedAgentTool[] = [];
   const touchedPaths: string[] = [];
@@ -1101,7 +1436,13 @@ async function executeReadOnlyBatch(
 
   for (const toolCall of toolCalls) {
     const toolStartedAt = Date.now();
-    const result = await executeToolCall(toolCall, sessionId, mode);
+    const result = await executeToolCall(
+      toolCall,
+      sessionId,
+      mode,
+      step,
+      parentSpan,
+    );
     executed.push({
       durationMs: Date.now() - toolStartedAt,
       result,
@@ -1184,7 +1525,7 @@ async function finalizeWithFinishTurn(
   input: SandboxAgentInput,
   state: AgentRunState,
   finishPrompt: string,
-  options: RunSandboxAgentOptions = {},
+  options: RunSandboxAgentLoopOptions,
   failureCode?: AgentFailureCode,
 ) {
   let finishTurnResponse: AIGenerateTextResult;
@@ -1192,7 +1533,12 @@ async function finalizeWithFinishTurn(
 
   try {
     await emitProgress(options.onProgress, "Finishing up...");
-    finishTurnResponse = await callAgentFinishTurn(state, finishPrompt, input.model);
+    finishTurnResponse = await callAgentFinishTurn(
+      state,
+      finishPrompt,
+      options.agentRunSpan,
+      input.model,
+    );
   } catch (error) {
     console.error("Sandbox agent finish turn failed:", error);
     const mappedError = mapModelError(error);
@@ -1256,9 +1602,9 @@ async function finalizeWithFinishTurn(
   });
 }
 
-export async function runSandboxAgent(
+async function runSandboxAgentLoop(
   input: SandboxAgentInput,
-  options: RunSandboxAgentOptions = {},
+  options: RunSandboxAgentLoopOptions,
 ): Promise<SandboxAgentInternalResult> {
   const instructionPreview = toTracePreview(input.userInstruction, 240);
 
@@ -1312,9 +1658,25 @@ export async function runSandboxAgent(
   while (true) {
     let modelResponse: AIGenerateTextResult;
     const modelTurnStartedAt = Date.now();
+    const argumentRepairTool = state.pendingArgumentRepairTool;
+    state.pendingArgumentRepairTool = undefined;
 
     try {
-      modelResponse = await callAgentToolTurn(state, input.mode, input.model);
+      modelResponse = await callAgentToolTurn(
+        state,
+        input.mode,
+        options.agentRunSpan,
+        input.model,
+        state.stepsUsed + 1,
+        argumentRepairTool
+          ? {
+              function: {
+                name: argumentRepairTool,
+              },
+              type: "function",
+            }
+          : "auto",
+      );
     } catch (error) {
       console.error("Sandbox agent tool turn failed:", error);
       const mappedError = mapModelError(error);
@@ -1435,6 +1797,8 @@ export async function runSandboxAgent(
         toolCall,
         input.sessionId,
         input.mode,
+        state.stepsUsed,
+        options.agentRunSpan,
       );
       await recordAgentToolResult(
         input,
@@ -1500,6 +1864,13 @@ export async function runSandboxAgent(
           );
         }
 
+        queueArgumentRepair(
+          state,
+          toolResult,
+          toolCall.function.name as SandboxAgentToolName,
+          !argumentRepairTool,
+        );
+
         continue;
       }
 
@@ -1524,6 +1895,8 @@ export async function runSandboxAgent(
       toolTurn.toolCalls,
       input.sessionId,
       input.mode,
+      state.stepsUsed,
+      options.agentRunSpan,
     );
 
     for (const executedTool of batchResult.executed) {
@@ -1615,9 +1988,62 @@ export async function runSandboxAgent(
         );
       }
 
+      const argumentFailure = getToolFailures(batchResult.executed).find(
+        (item) => item.result.argumentValidationFailure,
+      );
+
+      if (argumentFailure) {
+        queueArgumentRepair(
+          state,
+          argumentFailure.result,
+          argumentFailure.toolCall.function.name as SandboxAgentToolName,
+          !argumentRepairTool,
+        );
+      }
+
       continue;
     }
 
     resetRecoveryTracking(state);
   }
+}
+
+export async function runSandboxAgent(
+  input: SandboxAgentInput,
+  options: RunSandboxAgentOptions = {},
+): Promise<SandboxAgentInternalResult> {
+  return sandboxAgentTracer.startActiveSpan(
+    "sandbox_agent.run",
+    {
+      attributes: {
+        "agent.mode": input.mode,
+        "conversation.session_id": input.conversationSessionId,
+        "gen_ai.operation.name": "invoke_agent",
+        "gen_ai.request.model": input.model,
+        "issue.number": input.issueNumber,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await runSandboxAgentLoop(input, {
+          ...options,
+          agentRunSpan: span,
+        });
+        recordAgentRunSpanResult(span, result);
+        return result;
+      } catch (error) {
+        const exception =
+          error instanceof Error ? error : new Error(String(error));
+
+        span.recordException(exception);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: exception.message,
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }

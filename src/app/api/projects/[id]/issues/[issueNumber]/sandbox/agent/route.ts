@@ -226,6 +226,7 @@ export async function POST(
       const result = await runSandboxAgent(
         {
           conversationHistory,
+          conversationSessionId: chatSession.id,
           issueNumber: access.issueNumber,
           issueTitle: issueResult.issue.title,
           mode,

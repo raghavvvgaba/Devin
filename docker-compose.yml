@@ -1,13 +1,25 @@
 services:
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
   app:
     build:
       context: .
       args:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    depends_on:
+      - jaeger
     env_file:
       - .env
     environment:
       NODE_ENV: production
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      OTEL_SERVICE_NAME: inlaya-agent
+      OTEL_TRACES_EXPORTER: otlp
       PORT: 3000
     ports:
       - "3000:3000"

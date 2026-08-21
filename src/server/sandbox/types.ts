@@ -200,6 +200,7 @@ export type SandboxAgentConversationMessage = {
 
 export type SandboxAgentInput = {
   conversationHistory: SandboxAgentConversationMessage[];
+  conversationSessionId: string;
   issueNumber: number;
   issueTitle: string;
   mode: SandboxAgentMode;
