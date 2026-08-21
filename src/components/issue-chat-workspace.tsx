@@ -38,7 +38,6 @@ type IssueChatWorkspaceProps = {
   initialMessages: AIChatMessage[];
   issueNumber: number;
   issueTitle?: string;
-  modelPickerEnabled?: boolean;
   projectId: string;
   sessionAction: string;
   submitAction: string;
@@ -109,7 +108,6 @@ export function IssueChatWorkspace({
   initialMessages,
   issueNumber,
   issueTitle,
-  modelPickerEnabled = false,
   projectId,
   sessionAction,
   submitAction,
@@ -600,7 +598,6 @@ export function IssueChatWorkspace({
         instruction={instruction}
         isPreparing={isRunning}
         mode={agentMode}
-        modelPickerEnabled={modelPickerEnabled}
         onInstructionChange={setInstruction}
         onModeChange={setAgentMode}
         onModelChange={setSelectedModel}

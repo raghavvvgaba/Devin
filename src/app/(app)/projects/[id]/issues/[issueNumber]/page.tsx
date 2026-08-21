@@ -8,7 +8,6 @@ import { IssueDetailsModal } from "~/components/issue-details-modal";
 import { IssuePreviewPane } from "~/components/issue-preview-pane";
 import { IssueWorkspaceLayout } from "~/components/issue-workspace-layout";
 import { Button } from "~/components/ui/button";
-import { env } from "~/env";
 import { getAuth } from "~/server/auth/session";
 import { getIssueWorkspacePageData } from "~/server/projects";
 
@@ -47,8 +46,6 @@ export default async function ProjectIssuePage({
   const agentAction = `${sandboxBaseAction}/agent`;
   const clearChatAction = `/api/projects/${project.id}/issues/${issueNumber}/chat`;
   const submitAction = `${sandboxBaseAction}/submit`;
-  const modelPickerEnabled = env.AI_PROVIDER === "openrouter";
-
   return (
     <IssueWorkspaceLayout
       sidebar={
@@ -102,7 +99,6 @@ export default async function ProjectIssuePage({
               initialMessages={messages}
               issueNumber={issueNumber}
               issueTitle={issueTitle}
-              modelPickerEnabled={modelPickerEnabled}
               projectId={project.id}
               sessionAction={`${sandboxBaseAction}/session`}
               submitAction={submitAction}

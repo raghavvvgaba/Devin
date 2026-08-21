@@ -18,9 +18,6 @@ export const env = createEnv({
     GITHUB_APP_INSTALL_URL: z.string().url(),
     OPENROUTER_API_KEY: z.string().min(1).optional(),
     OPENROUTER_MODEL: z.string().min(1).optional(),
-    OPENCODE_API_KEY: z.string().min(1).optional(),
-    OPENCODE_GO_MODEL: z.string().min(1).optional(),
-    AI_PROVIDER: z.enum(["openrouter", "opencode-go"]).default("openrouter"),
     OTEL_SERVICE_NAME: z.string().min(1).default("inlaya-agent"),
     OTEL_TRACES_EXPORTER: z
       .enum(["console", "none", "otlp"])
@@ -67,9 +64,6 @@ export const env = createEnv({
     GITHUB_APP_INSTALL_URL: process.env.GITHUB_APP_INSTALL_URL,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     OPENROUTER_MODEL: process.env.OPENROUTER_MODEL,
-    OPENCODE_API_KEY: process.env.OPENCODE_API_KEY,
-    OPENCODE_GO_MODEL: process.env.OPENCODE_GO_MODEL,
-    AI_PROVIDER: process.env.AI_PROVIDER,
     OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
     OTEL_TRACES_EXPORTER: process.env.OTEL_TRACES_EXPORTER,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:

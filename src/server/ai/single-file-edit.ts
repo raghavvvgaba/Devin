@@ -114,7 +114,6 @@ function mapAiProviderError(error: unknown): Exclude<
 
   if (
     message.includes("OPENROUTER_API_KEY") ||
-    message.includes("OPENCODE_API_KEY") ||
     message.includes("authentication failed")
   ) {
     return "missing_api_key";

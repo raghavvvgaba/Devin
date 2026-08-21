@@ -26,7 +26,6 @@ type ChatInputBoxProps = {
   instruction: string;
   isPreparing?: boolean;
   mode: SandboxAgentMode;
-  modelPickerEnabled?: boolean;
   onInstructionChange: (value: string) => void;
   onModeChange: (mode: SandboxAgentMode) => void;
   onModelChange: (model: string) => void;
@@ -39,7 +38,6 @@ export function ChatInputBox({
   instruction,
   isPreparing = false,
   mode,
-  modelPickerEnabled = false,
   onInstructionChange,
   onModeChange,
   onModelChange,
@@ -125,12 +123,8 @@ export function ChatInputBox({
                 className={cn(
                   "flex h-7 items-center gap-1 border border-[#171713]/15 bg-[#e8e2d5]/70 px-2 text-[10px] font-semibold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#f04f2f] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#fffaf0]/15 dark:bg-white/5",
                 )}
-                disabled={!modelPickerEnabled || accessBlocked || isPreparing}
-                title={
-                  modelPickerEnabled
-                    ? "Select AI model"
-                    : "Model picker is unavailable with the current AI provider."
-                }
+                disabled={accessBlocked || isPreparing}
+                title="Select AI model"
                 type="button"
               >
                 {getAgentModelLabel(selectedModel)}

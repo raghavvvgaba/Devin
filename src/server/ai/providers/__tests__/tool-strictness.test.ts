@@ -5,14 +5,11 @@ import type { AIGenerateTextInput } from "~/server/ai/types";
 vi.mock("~/env", () => ({
   env: {
     GITHUB_APP_CALLBACK_URL: "https://example.com/api/github/callback",
-    OPENCODE_API_KEY: "opencode-test-key",
-    OPENCODE_GO_MODEL: "deepseek-v4-flash",
     OPENROUTER_API_KEY: "openrouter-test-key",
     OPENROUTER_MODEL: "deepseek-v4-flash",
   },
 }));
 
-import { opencodeGoAiProvider } from "../opencode-go";
 import { openRouterAiProvider } from "../openrouter";
 
 const tool = {
@@ -98,17 +95,6 @@ describe("AI provider tool strictness", () => {
 
     const body = getRequestBody(fetchMock);
     expect(body.provider?.require_parameters).toBe(true);
-    expect(body.tools?.[0]?.function.strict).toBeUndefined();
-  });
-
-  it("leaves OpenCode Go tool definitions unchanged", async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(successfulResponse("deepseek-v4-flash"));
-
-    await opencodeGoAiProvider.generateText(buildInput("deepseek-v4-flash"));
-
-    const body = getRequestBody(fetchMock);
-    expect(body.provider).toBeUndefined();
     expect(body.tools?.[0]?.function.strict).toBeUndefined();
   });
 });

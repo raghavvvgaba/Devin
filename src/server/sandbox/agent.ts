@@ -558,7 +558,6 @@ function mapModelError(error: unknown): {
 
   if (
     message.includes("OPENROUTER_API_KEY") ||
-    message.includes("OPENCODE_API_KEY") ||
     message.includes("authentication failed") ||
     message.includes("model is not configured")
   ) {

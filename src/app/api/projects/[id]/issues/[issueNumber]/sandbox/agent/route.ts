@@ -13,7 +13,6 @@ import {
   getOrCreateIssueChatSession,
   toSandboxAgentConversationHistory,
 } from "~/server/chat";
-import { env } from "~/env";
 import { revalidateProjectGitHubReads } from "~/server/github/cache";
 import { fetchProjectIssue } from "~/server/github/issues";
 import { runSandboxAgent } from "~/server/sandbox/agent";
@@ -210,7 +209,7 @@ export async function POST(
           issueTitle: issueResult.issue.title,
           mode,
           projectId: access.project.id,
-          provider: env.AI_PROVIDER,
+          provider: "openrouter",
           requestedModel: model,
           userId: access.userId,
         });

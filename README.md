@@ -73,13 +73,10 @@ Server-side variables:
 - `GITHUB_APP_INSTALL_URL`
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_MODEL`
-- `AI_PROVIDER` — `"openrouter"` (default) or `"opencode-go"`
 - `OTEL_SERVICE_NAME` — service name shown in Jaeger; defaults to `inlaya-agent`
 - `OTEL_TRACES_EXPORTER` — `"otlp"` (default), `"console"`, or `"none"`
 - `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` — complete OTLP/HTTP trace endpoint;
   defaults to `http://localhost:4318/v1/traces`
-- `OPENCODE_API_KEY` — retained for the legacy OpenCode Go fallback
-- `OPENCODE_GO_MODEL` — retained for the legacy OpenCode Go fallback
 - `E2B_API_KEY`
 - `E2B_SANDBOX_TEMPLATE`
 
