@@ -30,6 +30,7 @@ export type AIToolDefinition = {
     description?: string;
     name: string;
     parameters: Record<string, unknown>;
+    strict?: boolean;
   };
   type: "function";
 };

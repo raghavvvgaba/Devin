@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_MODELS,
   DEFAULT_AGENT_MODEL,
+  supportsStrictToolArguments,
   toOpenRouterModelId,
 } from "~/lib/agent-models";
 
@@ -29,6 +30,31 @@ describe("agent model mappings", () => {
     expect(toOpenRouterModelId(DEFAULT_AGENT_MODEL)).toBe(
       "deepseek/deepseek-v4-flash",
     );
+  });
+
+  it("declares strict tool-argument support for every selectable model", () => {
+    expect(
+      AGENT_MODELS.map(({ id, openRouterId, supportsStrictToolArguments }) => ({
+        id,
+        openRouterId,
+        supportsStrictToolArguments,
+      })),
+    ).toEqual(
+      AGENT_MODELS.map(({ id, openRouterId }) => ({
+        id,
+        openRouterId,
+        supportsStrictToolArguments: true,
+      })),
+    );
+
+    for (const model of AGENT_MODELS) {
+      expect(supportsStrictToolArguments(model.id)).toBe(true);
+      expect(supportsStrictToolArguments(model.openRouterId)).toBe(true);
+    }
+  });
+
+  it("defaults unknown models to non-strict tool arguments", () => {
+    expect(supportsStrictToolArguments("vendor/unknown-model")).toBe(false);
   });
 
   it("preserves an already-qualified custom OpenRouter model ID", () => {

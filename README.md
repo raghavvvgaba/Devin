@@ -104,6 +104,40 @@ Run the app locally:
 pnpm dev
 ```
 
+### Adding an OpenRouter agent model
+
+Before adding a model to `AGENT_MODELS`:
+
+1. Check its `supported_parameters` in OpenRouter's public
+   [`/api/v1/models`](https://openrouter.ai/api/v1/models) metadata.
+2. Confirm whether it supports both `tools` and `structured_outputs`.
+3. Set `supportsStrictToolArguments` explicitly in the model configuration.
+4. Run `pnpm test -- src/lib/__tests__/agent-models.test.ts src/server/ai/providers/__tests__/tool-strictness.test.ts`.
+
+Unknown models default to non-strict tool arguments. Local Zod validation remains
+required even when OpenRouter strict tool arguments are enabled.
+
+## Agent tracing with Jaeger
+
+Start the local Jaeger service:
+
+```bash
+docker compose up -d jaeger
+```
+
+Run the app with `pnpm dev`, then complete an agent request. Open
+[http://localhost:16686](http://localhost:16686), select the `inlaya-agent`
+service, choose **Find Traces**, and open the `sandbox_agent.run` trace.
+
+The local Jaeger service accepts OTLP/HTTP traces on port `4318` and stores
+them in memory, so its traces are cleared when the container is removed.
+
+To return temporarily to terminal output instead of Jaeger, set:
+
+```bash
+OTEL_TRACES_EXPORTER=console
+```
+
 Useful commands:
 
 - `pnpm build`

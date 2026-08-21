@@ -1,7 +1,10 @@
 import "server-only";
 
 import { env } from "~/env";
-import { toOpenRouterModelId } from "~/lib/agent-models";
+import {
+  supportsStrictToolArguments,
+  toOpenRouterModelId,
+} from "~/lib/agent-models";
 import type {
   AIGenerateTextInput,
   AIGenerateTextResult,
@@ -115,6 +118,23 @@ function getOpenRouterModel(modelOverride?: string) {
   return model ? toOpenRouterModelId(model) : undefined;
 }
 
+function buildOpenRouterTools(
+  tools: AIGenerateTextInput["tools"],
+  model: string,
+) {
+  if (!tools || !supportsStrictToolArguments(model)) {
+    return tools;
+  }
+
+  return tools.map((tool) => ({
+    ...tool,
+    function: {
+      ...tool.function,
+      strict: true,
+    },
+  }));
+}
+
 async function generateText(
   input: AIGenerateTextInput,
 ): Promise<AIGenerateTextResult> {
@@ -164,7 +184,7 @@ async function generateText(
             : undefined,
         temperature: input.temperature,
         tool_choice: input.toolChoice,
-        tools: input.tools,
+        tools: buildOpenRouterTools(input.tools, model),
       }),
       cache: "no-store",
     });
