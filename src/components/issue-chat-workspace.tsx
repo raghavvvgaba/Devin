@@ -24,6 +24,11 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { useSidebar } from "~/components/issue-workspace-layout";
+import {
+  appendFinalMessageDelta,
+  removeTransientAgentMessages,
+  workingMessageId,
+} from "~/lib/agent-stream-state";
 import { DEFAULT_AGENT_MODEL, isAgentModelId } from "~/lib/agent-models";
 import { buildIssueChatRuntimeMessage } from "~/lib/issue-chat-messages";
 import { sandboxSessionUpdatedEvent } from "~/lib/sandbox-events";
@@ -59,6 +64,10 @@ type AgentStreamEvent =
   | {
       message: string;
       type: "progress";
+    }
+  | {
+      delta: string;
+      type: "final_delta";
     }
   | {
       result: AgentResponse;
@@ -98,7 +107,6 @@ type SandboxSessionResponse =
     };
 
 const MAX_WORKING_UPDATES = 5;
-const workingMessageId = "working-message";
 
 export function IssueChatWorkspace({
   accessBlocked,
@@ -225,10 +233,6 @@ export function IssueChatWorkspace({
     });
   }
 
-  function removeWorkingMessage(messagesToFilter: AIChatMessage[]) {
-    return messagesToFilter.filter((message) => message.id !== workingMessageId);
-  }
-
   async function readAgentStream(response: Response): Promise<AgentResponse> {
     if (!response.body) {
       throw new Error("The sandbox agent did not return a stream.");
@@ -255,6 +259,11 @@ export function IssueChatWorkspace({
         switch (parsedEvent.type) {
           case "progress":
             pushWorkingUpdate(parsedEvent.message);
+            break;
+          case "final_delta":
+            setMessages((current) =>
+              appendFinalMessageDelta(current, parsedEvent.delta),
+            );
             break;
           case "final":
             return parsedEvent.result;
@@ -350,7 +359,7 @@ export function IssueChatWorkspace({
 
       if (!response.ok || result.status === "failed") {
         setMessages((current) => [
-          ...removeWorkingMessage(current),
+          ...removeTransientAgentMessages(current),
           buildIssueChatRuntimeMessage("agent_run_failed", {
             fallbackBody:
               result.message ?? "The sandbox agent could not finish this request.",
@@ -365,7 +374,7 @@ export function IssueChatWorkspace({
           : [userMessage, buildFallbackAgentMessage(result)];
 
       setMessages((current) => [
-        ...removeWorkingMessage(current).filter(
+        ...removeTransientAgentMessages(current).filter(
           (message) => message.id !== userMessage.id,
         ),
         ...nextMessages,
@@ -377,7 +386,7 @@ export function IssueChatWorkspace({
       );
     } catch {
       setMessages((current) => [
-        ...removeWorkingMessage(current),
+        ...removeTransientAgentMessages(current),
         buildIssueChatRuntimeMessage("agent_run_failed"),
       ]);
     } finally {

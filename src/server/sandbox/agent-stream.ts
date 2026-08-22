@@ -4,6 +4,10 @@ export type SandboxAgentStreamEvent =
       type: "progress";
     }
   | {
+      delta: string;
+      type: "final_delta";
+    }
+  | {
       result: unknown;
       type: "final";
     }
@@ -15,4 +19,3 @@ export type SandboxAgentStreamEvent =
 export function formatSseEvent(event: SandboxAgentStreamEvent) {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
-

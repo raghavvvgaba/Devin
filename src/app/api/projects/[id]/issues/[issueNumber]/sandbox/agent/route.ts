@@ -237,6 +237,9 @@ export async function POST(
           userInstruction: instruction,
         },
         {
+          onFinalTextDelta(delta) {
+            agentStream.send({ delta, type: "final_delta" });
+          },
           onProgress(event) {
             agentStream.send(event);
           },

@@ -66,6 +66,7 @@ export type AIGenerateTextInput = {
   maxTokens?: number;
   messages: AIMessage[];
   model?: string;
+  onTextDelta?: (delta: string) => Promise<void> | void;
   responseFormat?:
     | {
         jsonSchema: AIJsonSchema;
@@ -75,6 +76,7 @@ export type AIGenerateTextInput = {
         type: "text";
       };
   temperature?: number;
+  stream?: boolean;
   toolChoice?: AIToolChoice;
   tools?: AIToolDefinition[];
 };
@@ -82,6 +84,7 @@ export type AIGenerateTextInput = {
 export type AIGenerateTextResult = {
   model: string;
   text: string;
+  timeToFirstOutputMs?: number;
   toolCalls?: AIToolCall[];
   usage?: AIUsage;
 };

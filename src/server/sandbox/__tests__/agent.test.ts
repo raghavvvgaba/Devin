@@ -786,6 +786,48 @@ describe("runSandboxAgent", () => {
     ]);
   });
 
+  it("streams only the decoded final message while keeping tool turns buffered", async () => {
+    const finalText =
+      '{"status":"completed","message":"Updated\\nproject \\uD83D\\uDE80"}';
+    const streamedDeltas: string[] = [];
+
+    generateTextMock
+      .mockResolvedValueOnce(createModelResponse({ text: "Ready to finish." }))
+      .mockImplementationOnce(async (input) => {
+        for (const chunk of [
+          '{"status":"completed","message":"Updated\\',
+          'nproject \\uD83D',
+          '\\uDE80"}',
+        ]) {
+          await input.onTextDelta?.(chunk);
+        }
+
+        return createModelResponse({ text: finalText });
+      });
+
+    const result = await runSandboxAgent(baseInput, {
+      onFinalTextDelta(delta) {
+        streamedDeltas.push(delta);
+      },
+    });
+
+    expect(result).toMatchObject({
+      message: "Updated\nproject 🚀",
+      status: "completed",
+    });
+    expect(streamedDeltas.join("")).toBe("Updated\nproject 🚀");
+    expect(streamedDeltas.join("")).not.toContain("status");
+    expect(getModelCall(0)?.stream).toBeUndefined();
+    expect(getModelCall(1)?.stream).toBe(true);
+
+    const finishSpan = agentSpanExporter
+      .getFinishedSpans()
+      .find((span) => span.attributes["agent.phase"] === "finish");
+    expect(
+      finishSpan?.attributes["agent.model.time_to_first_visible_delta_ms"],
+    ).toEqual(expect.any(Number));
+  });
+
   it("uses the structured finish message instead of raw no-tool prose with protocol JSON", async () => {
     const rawNoToolResponse = [
       "Based on the repository name, this appears to be a portfolio project.",

@@ -48,9 +48,35 @@ type OpenRouterResponse = {
   };
 };
 
+type OpenRouterStreamChunk = OpenRouterResponse & {
+  choices?: Array<{
+    delta?: {
+      content?: OpenRouterMessageContent;
+    };
+  }>;
+  error?: {
+    code?: number | string;
+    message?: string;
+  };
+};
+
 function getResponseText(response: OpenRouterResponse) {
   const content = response.choices?.[0]?.message?.content;
 
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (part?.type === "text" ? part.text ?? "" : ""))
+      .join("");
+  }
+
+  return "";
+}
+
+function getMessageContentText(content: OpenRouterMessageContent | undefined) {
   if (typeof content === "string") {
     return content;
   }
@@ -135,6 +161,119 @@ function buildOpenRouterTools(
   }));
 }
 
+function describeOpenRouterStreamError(error: OpenRouterStreamChunk["error"]) {
+  const message = error?.message?.trim() || "Unknown streaming error.";
+  const code = error?.code;
+
+  if (code === 429 || code === "429") {
+    return `OpenRouter request was rate limited. Response: ${message}`;
+  }
+
+  return `OpenRouter stream failed.${code !== undefined ? ` Code: ${code}.` : ""} Response: ${message}`;
+}
+
+async function readOpenRouterStream(
+  response: Response,
+  input: AIGenerateTextInput,
+  fallbackModel: string,
+): Promise<AIGenerateTextResult> {
+  if (!response.body) {
+    throw new Error("OpenRouter returned an empty streaming response.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed = false;
+  let model = fallbackModel;
+  let text = "";
+  let usage: AIUsage | undefined;
+
+  const processLine = async (rawLine: string) => {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+
+    if (!line || line.startsWith(":")) {
+      return;
+    }
+
+    if (!line.startsWith("data:")) {
+      return;
+    }
+
+    const payload = line.slice(5).trimStart();
+
+    if (payload === "[DONE]") {
+      completed = true;
+      return;
+    }
+
+    let chunk: OpenRouterStreamChunk;
+
+    try {
+      chunk = JSON.parse(payload) as OpenRouterStreamChunk;
+    } catch {
+      throw new Error("OpenRouter returned a malformed streaming event.");
+    }
+
+    if (chunk.error) {
+      throw new Error(describeOpenRouterStreamError(chunk.error));
+    }
+
+    if (chunk.model) {
+      model = chunk.model;
+    }
+
+    const chunkUsage = getUsage(chunk);
+    if (chunkUsage) {
+      usage = chunkUsage;
+    }
+
+    const delta = getMessageContentText(chunk.choices?.[0]?.delta?.content);
+    if (!delta) {
+      return;
+    }
+
+    text += delta;
+    await input.onTextDelta?.(delta);
+  };
+
+  while (!completed) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      await processLine(line);
+      if (completed) break;
+    }
+  }
+
+  if (!completed && buffer) {
+    await processLine(buffer);
+  }
+
+  if (!completed) {
+    throw new Error("OpenRouter streaming response ended before [DONE].");
+  }
+
+  if (!text) {
+    throw new Error("OpenRouter returned an empty response.");
+  }
+
+  return {
+    model,
+    text,
+    ...(usage ? { usage } : {}),
+  };
+}
+
 async function generateText(
   input: AIGenerateTextInput,
 ): Promise<AIGenerateTextResult> {
@@ -183,6 +322,7 @@ async function generateText(
               }
             : undefined,
         temperature: input.temperature,
+        stream: input.stream || undefined,
         tool_choice: input.toolChoice,
         tools: buildOpenRouterTools(input.tools, model),
       }),
@@ -212,6 +352,10 @@ async function generateText(
     throw new Error(
       `OpenRouter request failed with status ${response.status}.${preview ? ` Response: ${preview}` : ""}`,
     );
+  }
+
+  if (input.stream) {
+    return readOpenRouterStream(response, input, model);
   }
 
   let data: OpenRouterResponse;

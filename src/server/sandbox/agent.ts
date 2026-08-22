@@ -40,6 +40,7 @@ import {
   type SandboxAgentToolName,
 } from "~/server/sandbox/tools/registry";
 import { sandboxProvider } from "~/server/sandbox/provider";
+import { IncrementalJsonStringField } from "~/server/sandbox/incremental-json-string";
 import type {
   SandboxAgentInput,
   SandboxAgentMode,
@@ -187,6 +188,7 @@ type AgentToolBatchResult =
     };
 
 type RunSandboxAgentOptions = {
+  onFinalTextDelta?: (delta: string) => Promise<void> | void;
   onProgress?: SandboxAgentProgressHandler;
   onTrace?: SandboxAgentTraceHandler;
 };
@@ -651,6 +653,13 @@ async function traceAgentModelRequest(input: {
           }
         }
 
+        if (response.timeToFirstOutputMs !== undefined) {
+          span.setAttribute(
+            "agent.model.time_to_first_visible_delta_ms",
+            response.timeToFirstOutputMs,
+          );
+        }
+
         span.setStatus({ code: SpanStatusCode.OK });
         return response;
       } catch (error) {
@@ -1015,12 +1024,16 @@ async function callAgentFinishTurn(
   state: AgentRunState,
   finishPrompt: string,
   parentSpan: Span,
+  onFinalTextDelta?: RunSandboxAgentOptions["onFinalTextDelta"],
   model?: string,
   step = state.stepsUsed + 1,
 ): Promise<AIGenerateTextResult> {
   return traceAgentModelRequest({
-    generate: () =>
-      aiProvider.generateText({
+    generate: async () => {
+      const messageField = new IncrementalJsonStringField("message");
+      const streamStartedAt = Date.now();
+      let timeToFirstOutputMs: number | undefined;
+      const response = await aiProvider.generateText({
         maxTokens: 1_500,
         messages: [
           ...state.transcript,
@@ -1038,9 +1051,25 @@ async function callAgentFinishTurn(
             strict: true,
           },
         },
+        onTextDelta: async (rawDelta) => {
+          const messageDelta = messageField.push(rawDelta);
+          if (!messageDelta) return;
+
+          timeToFirstOutputMs ??= Date.now() - streamStartedAt;
+          await onFinalTextDelta?.(messageDelta);
+        },
+        stream: true,
         temperature: 0.1,
         toolChoice: "none",
-      }),
+      });
+
+      return {
+        ...response,
+        ...(timeToFirstOutputMs !== undefined
+          ? { timeToFirstOutputMs }
+          : {}),
+      };
+    },
     parentSpan,
     phase: "finish",
     requestedModel: model,
@@ -1525,6 +1554,7 @@ async function finalizeWithFinishTurn(
       state,
       finishPrompt,
       options.agentRunSpan,
+      options.onFinalTextDelta,
       input.model,
     );
   } catch (error) {
