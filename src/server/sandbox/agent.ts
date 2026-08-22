@@ -1448,25 +1448,30 @@ async function executeReadOnlyBatch(
   step: number,
   parentSpan: Span,
 ): Promise<AgentToolBatchResult> {
-  const executed: ExecutedAgentTool[] = [];
+  const executed = await Promise.all(
+    toolCalls.map(async (toolCall): Promise<ExecutedAgentTool> => {
+      const toolStartedAt = Date.now();
+      const result = await executeToolCall(
+        toolCall,
+        sessionId,
+        mode,
+        step,
+        parentSpan,
+      );
+
+      return {
+        durationMs: Date.now() - toolStartedAt,
+        result,
+        toolCall,
+      };
+    }),
+  );
   const touchedPaths: string[] = [];
   let latestSession: SandboxSession | undefined;
   let hadToolFailure = false;
 
-  for (const toolCall of toolCalls) {
-    const toolStartedAt = Date.now();
-    const result = await executeToolCall(
-      toolCall,
-      sessionId,
-      mode,
-      step,
-      parentSpan,
-    );
-    executed.push({
-      durationMs: Date.now() - toolStartedAt,
-      result,
-      toolCall,
-    });
+  for (const executedTool of executed) {
+    const { result } = executedTool;
 
     if ("touchedPath" in result && result.touchedPath) {
       touchedPaths.push(result.touchedPath);

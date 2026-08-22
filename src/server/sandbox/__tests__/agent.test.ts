@@ -1075,6 +1075,55 @@ describe("runSandboxAgent", () => {
     ]);
   });
 
+  it("executes independent read-only calls concurrently", async () => {
+    let activeReads = 0;
+    let maxActiveReads = 0;
+
+    readToolExecuteMock.mockImplementation(async (args) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeReads -= 1;
+
+      return {
+        content: `content for ${String(args.path)}`,
+        endLine: 4,
+        path: String(args.path),
+        size: 120,
+        startLine: 1,
+        totalLines: 4,
+        truncated: false,
+      };
+    });
+    generateTextMock
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: "I'll inspect both files.",
+          toolCalls: [
+            createToolCall("read_file", { path: "src/a.ts" }, "call-a"),
+            createToolCall("read_file", { path: "src/b.ts" }, "call-b"),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(createModelResponse({ text: "Done inspecting." }))
+      .mockResolvedValueOnce(
+        createModelResponse({
+          text: JSON.stringify({
+            message: "Inspected both files.",
+            status: "completed",
+          }),
+        }),
+      );
+
+    const result = await runSandboxAgent(baseInput);
+
+    expect(maxActiveReads).toBe(2);
+    expect(result).toMatchObject({
+      message: "Inspected both files.",
+      status: "completed",
+    });
+  });
+
   it("accepts glob_files in a read-only batch", async () => {
     generateTextMock
       .mockResolvedValueOnce(
