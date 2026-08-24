@@ -1,4 +1,4 @@
 Your previous response returned an invalid tool batch.
-Return either exactly one write-like tool call, or up to {{MAX_READ_ONLY_TOOL_CALLS}} read-only tool calls using only glob_files, list_directory, read_file, and search_code.
+Return either up to three write-like tool calls, or up to {{MAX_READ_ONLY_TOOL_CALLS}} read-only tool calls using only glob_files, list_directory, read_file, and search_code.
 Write-like tools are write_file and replace_in_file.
-Do not mix write-like tools with any other tool.
+Do not mix write-like and read-only tools in the same response.

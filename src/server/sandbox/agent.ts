@@ -61,6 +61,7 @@ const MAX_RECENT_EVENTS = 5;
 const MAX_LIST_DIRECTORY_ENTRIES = 40;
 const MAX_AGENT_MESSAGE_LENGTH = 1_200;
 const MAX_READ_ONLY_TOOL_CALLS = 5;
+const MAX_WRITE_TOOL_CALLS = 3;
 const MAX_RECOVERY_TURNS = 5;
 const MAX_SAME_FAILURE_REPEATS = 3;
 
@@ -131,6 +132,16 @@ type AgentToolFailure = {
   toolMessageContent: string;
 };
 
+type AgentToolSkipped = {
+  code: "skipped_due_to_prior_write_failure";
+  latestObservation: string;
+  message: string;
+  recentEvent: string;
+  status: "tool_skipped";
+  tool: string;
+  toolMessageContent: string;
+};
+
 type AgentToolInternalFatalFailure = {
   code: AgentFailureCode;
   message: string;
@@ -138,10 +149,12 @@ type AgentToolInternalFatalFailure = {
   status: "internal_fatal_failure";
 };
 
-type AgentToolExecutionResult =
+type AgentToolCallResult =
   | ({ status: "ok" } & AgentToolSuccess)
   | AgentToolFailure
   | AgentToolInternalFatalFailure;
+
+type AgentToolExecutionResult = AgentToolCallResult | AgentToolSkipped;
 
 type AgentModelPhase = "tool" | "finish";
 
@@ -158,6 +171,11 @@ type ToolTurnClassification =
       toolCalls: AIToolCall[];
     }
   | {
+      status: "write_batch";
+      toolCalls: AIToolCall[];
+    }
+  | {
+      code: "invalid_tool_batch" | "write_batch_limit_exceeded";
       reason: string;
       status: "invalid_batch";
       toolCalls: AIToolCall[];
@@ -323,12 +341,7 @@ function recordAgentRunSpanResult(
 
 function hasToolMessageContent(
   result: AgentToolExecutionResult,
-): result is Extract<
-  AgentToolExecutionResult,
-  {
-    status: "ok" | "tool_failure";
-  }
-> {
+): result is Exclude<AgentToolExecutionResult, AgentToolInternalFatalFailure> {
   return "toolMessageContent" in result;
 }
 
@@ -518,6 +531,57 @@ function buildToolFailureResult(
     toolMessageContent: buildToolFailureMessageContent({
       argumentsValue,
       code: message,
+      message,
+      retryable: true,
+      tool,
+    }),
+  };
+}
+
+function buildRejectedToolCallResult(
+  toolCall: AIToolCall,
+  code: "invalid_tool_batch" | "write_batch_limit_exceeded",
+  message: string,
+): AgentToolFailure {
+  const tool = toolCall.function.name;
+  const argumentsValue = parseToolCallArguments(toolCall);
+
+  return {
+    argumentValidationFailure: false,
+    code,
+    latestObservation: formatToolFeedback(tool, message),
+    message,
+    recentEvent: `${tool} was rejected: ${message}`,
+    status: "tool_failure",
+    tool,
+    toolMessageContent: buildToolFailureMessageContent({
+      argumentsValue,
+      code,
+      message,
+      retryable: true,
+      tool,
+    }),
+  };
+}
+
+function buildSkippedWriteResult(
+  toolCall: AIToolCall,
+  failedToolCall: AIToolCall,
+): AgentToolSkipped {
+  const code = "skipped_due_to_prior_write_failure";
+  const tool = toolCall.function.name;
+  const message = `This write was not executed because the earlier write ${failedToolCall.id} failed. Request this write again together with the failed write.`;
+
+  return {
+    code,
+    latestObservation: `${tool} was skipped after ${failedToolCall.function.name} failed.`,
+    message,
+    recentEvent: `${tool} was skipped because an earlier write failed.`,
+    status: "tool_skipped",
+    tool,
+    toolMessageContent: buildToolFailureMessageContent({
+      argumentsValue: parseToolCallArguments(toolCall),
+      code,
       message,
       retryable: true,
       tool,
@@ -951,6 +1015,9 @@ function classifyToolTurn(response: AIGenerateTextResult): ToolTurnClassificatio
   const allReadOnly = toolCalls.every((toolCall) =>
     READ_ONLY_TOOL_NAMES.has(toolCall.function.name as SandboxAgentToolName),
   );
+  const allWrites = toolCalls.every((toolCall) =>
+    WRITE_TOOL_NAMES.has(toolCall.function.name as SandboxAgentToolName),
+  );
 
   if (allReadOnly && toolCalls.length <= MAX_READ_ONLY_TOOL_CALLS) {
     return {
@@ -959,10 +1026,23 @@ function classifyToolTurn(response: AIGenerateTextResult): ToolTurnClassificatio
     };
   }
 
+  if (allWrites && toolCalls.length <= MAX_WRITE_TOOL_CALLS) {
+    return {
+      status: "write_batch",
+      toolCalls,
+    };
+  }
+
   return {
+    code:
+      allWrites && toolCalls.length > MAX_WRITE_TOOL_CALLS
+        ? "write_batch_limit_exceeded"
+        : "invalid_tool_batch",
     reason: allReadOnly
-      ? `Too many read-only tool calls were returned (${toolCalls.length}).`
-      : "A write-like tool was mixed with other tools or an unsupported multi-tool combination was returned.",
+      ? `Too many read-only tool calls were returned (${toolCalls.length}; maximum ${MAX_READ_ONLY_TOOL_CALLS}).`
+      : allWrites
+        ? `Too many write tool calls were returned (${toolCalls.length}; maximum ${MAX_WRITE_TOOL_CALLS}).`
+        : "Read-only and write-like tools cannot be mixed in one response.",
     status: "invalid_batch",
     toolCalls,
   };
@@ -1081,7 +1161,7 @@ async function executeToolCallCore(
   toolCall: AIToolCall,
   sessionId: string,
   mode: SandboxAgentMode,
-): Promise<AgentToolExecutionResult> {
+): Promise<AgentToolCallResult> {
   if (!isSandboxAgentToolName(toolCall.function.name)) {
     return buildUnknownToolFailureResult(
       toolCall.function.name,
@@ -1218,7 +1298,7 @@ async function executeToolCall(
   mode: SandboxAgentMode,
   step: number,
   parentSpan: Span,
-): Promise<AgentToolExecutionResult> {
+): Promise<AgentToolCallResult> {
   const toolName = toolCall.function.name;
   const argumentsValue = parseToolArgumentsForTrace(
     toolCall.function.arguments,
@@ -1350,6 +1430,36 @@ function appendUserMessage(state: AgentRunState, content: string) {
     content,
     role: "user",
   });
+}
+
+function formatToolCallReference(toolCall: AIToolCall) {
+  const argumentsValue = parseToolCallArguments(toolCall);
+  const path =
+    typeof argumentsValue.path === "string" ? ` at ${argumentsValue.path}` : "";
+
+  return `${toolCall.id} (${toolCall.function.name}${path})`;
+}
+
+function buildWriteBatchRecoveryPrompt(executed: ExecutedAgentTool[]) {
+  const succeeded = executed.filter((item) => item.result.status === "ok");
+  const failed = executed.filter(
+    (item) => item.result.status === "tool_failure",
+  );
+  const skipped = executed.filter(
+    (item) => item.result.status === "tool_skipped",
+  );
+
+  return [
+    "The write batch stopped at the first failed write.",
+    succeeded.length > 0
+      ? `Succeeded and must not be repeated: ${succeeded.map((item) => formatToolCallReference(item.toolCall)).join(", ")}.`
+      : "No writes succeeded.",
+    `Failed and must be requested again: ${failed.map((item) => formatToolCallReference(item.toolCall)).join(", ")}.`,
+    skipped.length > 0
+      ? `Skipped without execution and must also be requested again: ${skipped.map((item) => formatToolCallReference(item.toolCall)).join(", ")}.`
+      : "No later writes were skipped.",
+    `Return one new write-only response containing the failed and skipped writes, with no more than ${MAX_WRITE_TOOL_CALLS} write calls. Do not repeat successful writes and do not mix in read-only calls.`,
+  ].join("\n");
 }
 
 function queueArgumentRepair(
@@ -1503,6 +1613,82 @@ async function executeReadOnlyBatch(
     latestObservation: buildBatchObservation(executed),
     latestSession,
     status: hadToolFailure ? "tool_failure" : "ok",
+    touchedPaths,
+  };
+}
+
+async function executeWriteBatch(
+  toolCalls: AIToolCall[],
+  sessionId: string,
+  mode: SandboxAgentMode,
+  step: number,
+  parentSpan: Span,
+  beforeExecute: (toolCall: AIToolCall) => Promise<void>,
+): Promise<AgentToolBatchResult> {
+  const executed: ExecutedAgentTool[] = [];
+  const touchedPaths: string[] = [];
+  let latestSession: SandboxSession | undefined;
+
+  for (const [index, toolCall] of toolCalls.entries()) {
+    await beforeExecute(toolCall);
+    const toolStartedAt = Date.now();
+    const result = await executeToolCall(
+      toolCall,
+      sessionId,
+      mode,
+      step,
+      parentSpan,
+    );
+    executed.push({
+      durationMs: Date.now() - toolStartedAt,
+      result,
+      toolCall,
+    });
+
+    if ("touchedPath" in result && result.touchedPath) {
+      touchedPaths.push(result.touchedPath);
+    }
+
+    if ("session" in result && result.session) {
+      latestSession = result.session;
+    }
+
+    if (result.status === "internal_fatal_failure") {
+      return {
+        code: result.code,
+        executed,
+        latestObservation: buildBatchObservation(executed),
+        latestSession,
+        message: result.message,
+        status: "internal_fatal_failure",
+        touchedPaths,
+      };
+    }
+
+    if (result.status === "tool_failure") {
+      for (const skippedToolCall of toolCalls.slice(index + 1)) {
+        executed.push({
+          durationMs: 0,
+          result: buildSkippedWriteResult(skippedToolCall, toolCall),
+          toolCall: skippedToolCall,
+        });
+      }
+
+      return {
+        executed,
+        latestObservation: buildBatchObservation(executed),
+        latestSession,
+        status: "tool_failure",
+        touchedPaths,
+      };
+    }
+  }
+
+  return {
+    executed,
+    latestObservation: buildBatchObservation(executed),
+    latestSession,
+    status: "ok",
     touchedPaths,
   };
 }
@@ -1777,7 +1963,27 @@ async function runSandboxAgentLoop(
         );
       }
 
-      appendAssistantMessage(state, modelResponse.text);
+      const rejectedTools = toolTurn.toolCalls.map((toolCall) => ({
+        durationMs: 0,
+        result: buildRejectedToolCallResult(
+          toolCall,
+          toolTurn.code,
+          toolTurn.reason,
+        ),
+        toolCall,
+      }));
+      appendToolMessages(
+        state,
+        toolTurn.toolCalls,
+        rejectedTools.map((item) => ({
+          toolCallId: item.toolCall.id,
+          toolMessageContent: item.result.toolMessageContent,
+        })),
+        modelResponse.text,
+      );
+      state.latestObservation = buildBatchObservation(rejectedTools);
+      pushRecentEvent(state, `Rejected tool batch: ${toolTurn.reason}`);
+
       appendUserMessage(state, buildMultiToolRetryPrompt());
       invalidBatchRetryUsed = true;
       awaitingInvalidBatchRecovery = true;
@@ -1910,17 +2116,30 @@ async function runSandboxAgentLoop(
       continue;
     }
 
-    for (const toolCall of toolTurn.toolCalls) {
-      await emitToolProgress(options.onProgress, toolCall);
-    }
+    let batchResult: AgentToolBatchResult;
 
-    const batchResult = await executeReadOnlyBatch(
-      toolTurn.toolCalls,
-      input.sessionId,
-      input.mode,
-      state.stepsUsed,
-      options.agentRunSpan,
-    );
+    if (toolTurn.status === "read_only_batch") {
+      for (const toolCall of toolTurn.toolCalls) {
+        await emitToolProgress(options.onProgress, toolCall);
+      }
+
+      batchResult = await executeReadOnlyBatch(
+        toolTurn.toolCalls,
+        input.sessionId,
+        input.mode,
+        state.stepsUsed,
+        options.agentRunSpan,
+      );
+    } else {
+      batchResult = await executeWriteBatch(
+        toolTurn.toolCalls,
+        input.sessionId,
+        input.mode,
+        state.stepsUsed,
+        options.agentRunSpan,
+        (toolCall) => emitToolProgress(options.onProgress, toolCall),
+      );
+    }
 
     for (const executedTool of batchResult.executed) {
       await recordAgentToolResult(
@@ -1976,10 +2195,8 @@ async function runSandboxAgentLoop(
     }
 
     if (batchResult.status === "tool_failure") {
-      const exhaustedFailure = registerRecoveryAttempt(
-        state,
-        getToolFailures(batchResult.executed),
-      );
+      const toolFailures = getToolFailures(batchResult.executed);
+      const exhaustedFailure = registerRecoveryAttempt(state, toolFailures);
 
       if (exhaustedFailure) {
         pushRecentEvent(state, exhaustedFailure.recentEvent);
@@ -2011,7 +2228,15 @@ async function runSandboxAgentLoop(
         );
       }
 
-      const argumentFailure = getToolFailures(batchResult.executed).find(
+      if (toolTurn.status === "write_batch") {
+        appendUserMessage(
+          state,
+          buildWriteBatchRecoveryPrompt(batchResult.executed),
+        );
+        continue;
+      }
+
+      const argumentFailure = toolFailures.find(
         (item) => item.result.argumentValidationFailure,
       );
 
