@@ -1,3 +1,10 @@
+import {
+  SpanKind,
+  SpanStatusCode,
+  trace,
+  type Attributes,
+  type Span,
+} from "@opentelemetry/api";
 import type { CommandHandle } from "e2b";
 
 import {
@@ -17,6 +24,41 @@ import {
   setPreviewState,
 } from "~/server/sandbox/providers/e2b/session-state";
 import type { E2BSandboxSession } from "~/server/sandbox/providers/e2b/types";
+
+const previewTracer = trace.getTracer("inlaya.sandbox-preview");
+const EDIT_PREVIEW_URL_CHECK_TIMEOUT_MS = 2_000;
+const EDIT_PREVIEW_URL_RETRY_DELAY_MS = 500;
+
+async function tracePreviewStage<T>(
+  name: string,
+  execute: (span: Span) => Promise<T>,
+  attributes: Attributes = {},
+): Promise<T> {
+  return previewTracer.startActiveSpan(
+    name,
+    {
+      attributes,
+      kind: SpanKind.INTERNAL,
+    },
+    async (span) => {
+      try {
+        const result = await execute(span);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (error) {
+        const exception = error instanceof Error ? error : new Error(String(error));
+        span.recordException(exception);
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: exception.message,
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
 
 const VITE_REACT_ERROR_MARKERS = [
   "vite-error-overlay",
@@ -172,9 +214,28 @@ export async function restartPreviewServer(
   session: E2BSandboxSession,
   reason = "Restarting",
 ) {
-  setPreviewState(session, "recovering", "Preview reconnecting.");
-  await stopPreviewProcess(session);
-  await startPreviewServer(session, reason);
+  return tracePreviewStage(
+    "preview restart",
+    async (span) => {
+      setPreviewState(session, "recovering", "Preview reconnecting.");
+      const stopped = await tracePreviewStage(
+        "preview process_stop",
+        async (stopSpan) => {
+          const result = await stopPreviewProcess(session);
+          stopSpan.setAttribute("preview.process.stopped", result);
+          return result;
+        },
+      );
+      await tracePreviewStage(
+        "preview process_start",
+        async () => startPreviewServer(session, reason),
+      );
+      span.setAttribute("preview.process.stopped_before_start", stopped);
+    },
+    {
+      "preview.restart.reason": reason,
+    },
+  );
 }
 
 async function isPreviewProcessRunning(session: E2BSandboxSession) {
@@ -184,14 +245,17 @@ async function isPreviewProcessRunning(session: E2BSandboxSession) {
   return processes.some((process) => process.pid === session.previewProcessId);
 }
 
-async function isPreviewUrlReachable(session: E2BSandboxSession) {
+async function isPreviewUrlReachable(
+  session: E2BSandboxSession,
+  timeoutMs = 4_000,
+) {
   try {
-    const response = await fetch(session.previewUrl, {
-      signal: AbortSignal.timeout(4000),
+    await fetch(session.previewUrl, {
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
 
-    return response.ok;
+    return true;
   } catch {
     return false;
   }
@@ -270,7 +334,20 @@ export async function checkViteReactPreviewContent(
 }
 
 async function applyViteReactPreviewContentCheck(session: E2BSandboxSession) {
-  const result = await checkViteReactPreviewContent(session);
+  const result = await tracePreviewStage(
+    "preview content_fetch",
+    async (span) => {
+      const checkResult = await checkViteReactPreviewContent(session);
+      span.setAttribute("preview.content.ok", checkResult.ok);
+      if (!checkResult.ok) {
+        span.setAttribute("preview.content.failure_reason", checkResult.reason);
+      }
+      return checkResult;
+    },
+    {
+      "preview.request.timeout_ms": 4_000,
+    },
+  );
   if (!result.ok) {
     appendLog(session, `Preview check failed: ${result.details}\n`);
     setPreviewError(session, result.details);
@@ -303,73 +380,120 @@ export async function checkPreviewContentForDiagnostics(session: E2BSandboxSessi
 export async function checkViteReactPreviewBrowser(
   session: E2BSandboxSession,
 ): Promise<VitePreviewContentCheckResult> {
-  try {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ headless: true });
-
+  return tracePreviewStage("preview browser_check", async (browserSpan) => {
     try {
-      const page = await browser.newPage();
-      const observedErrors: string[] = [];
+      const { chromium } = await tracePreviewStage(
+        "preview browser_load",
+        async () => import("playwright"),
+      );
+      const browser = await tracePreviewStage(
+        "preview browser_launch",
+        async () => chromium.launch({ headless: true }),
+      );
 
-      page.on("console", (message) => {
-        if (message.type() === "error") {
-          observedErrors.push(message.text());
+      try {
+        const page = await tracePreviewStage(
+          "preview browser_new_page",
+          async () => browser.newPage(),
+        );
+        const observedErrors: string[] = [];
+
+        page.on("console", (message) => {
+          if (message.type() === "error") {
+            observedErrors.push(message.text());
+          }
+        });
+        page.on("pageerror", (error) => {
+          observedErrors.push(error.message);
+        });
+
+        await tracePreviewStage(
+          "preview browser_navigate",
+          async () =>
+            page.goto(session.previewUrl, {
+              timeout: 8_000,
+              waitUntil: "domcontentloaded",
+            }),
+          {
+            "preview.navigation.timeout_ms": 8_000,
+            "preview.navigation.wait_until": "domcontentloaded",
+          },
+        );
+        await tracePreviewStage(
+          "preview browser_render_wait",
+          async () => page.waitForTimeout(1_500),
+          {
+            "preview.render_wait_ms": 1_500,
+          },
+        );
+
+        const rootState = await tracePreviewStage(
+          "preview browser_inspect",
+          async () =>
+            page.evaluate(() => {
+              const root = document.querySelector("#root");
+              const bodyText = document.body.innerText.trim();
+
+              return {
+                bodyTextLength: bodyText.length,
+                hasRoot: Boolean(root),
+                rootChildCount: root?.childElementCount ?? 0,
+                rootTextLength: root?.textContent?.trim().length ?? 0,
+              };
+            }),
+        );
+
+        browserSpan.setAttribute("preview.browser.error_count", observedErrors.length);
+
+        if (observedErrors.length > 0) {
+          browserSpan.setAttributes({
+            "preview.browser.failure_reason": "runtime_error_marker",
+            "preview.browser.ok": false,
+          });
+          return {
+            details: observedErrors[0] ?? "Browser console error.",
+            ok: false,
+            reason: "runtime_error_marker",
+          };
         }
-      });
-      page.on("pageerror", (error) => {
-        observedErrors.push(error.message);
-      });
 
-      await page.goto(session.previewUrl, {
-        timeout: 8_000,
-        waitUntil: "domcontentloaded",
-      });
-      await page.waitForTimeout(1_500);
+        if (
+          rootState.hasRoot &&
+          rootState.rootChildCount === 0 &&
+          rootState.rootTextLength === 0 &&
+          rootState.bodyTextLength === 0
+        ) {
+          browserSpan.setAttributes({
+            "preview.browser.failure_reason": "blank_preview",
+            "preview.browser.ok": false,
+          });
+          return {
+            details: "Vite React root stayed empty after browser render.",
+            ok: false,
+            reason: "blank_preview",
+          };
+        }
 
-      const rootState = await page.evaluate(() => {
-        const root = document.querySelector("#root");
-        const bodyText = document.body.innerText.trim();
-
-        return {
-          bodyTextLength: bodyText.length,
-          hasRoot: Boolean(root),
-          rootChildCount: root?.childElementCount ?? 0,
-          rootTextLength: root?.textContent?.trim().length ?? 0,
-        };
-      });
-
-      if (observedErrors.length > 0) {
-        return {
-          details: observedErrors[0] ?? "Browser console error.",
-          ok: false,
-          reason: "runtime_error_marker",
-        };
+        browserSpan.setAttribute("preview.browser.ok", true);
+        return { ok: true };
+      } finally {
+        await tracePreviewStage(
+          "preview browser_close",
+          async () => browser.close(),
+        );
       }
-
-      if (
-        rootState.hasRoot &&
-        rootState.rootChildCount === 0 &&
-        rootState.rootTextLength === 0 &&
-        rootState.bodyTextLength === 0
-      ) {
-        return {
-          details: "Vite React root stayed empty after browser render.",
-          ok: false,
-          reason: "blank_preview",
-        };
-      }
-
-      return { ok: true };
-    } finally {
-      await browser.close();
+    } catch (error) {
+      browserSpan.setAttributes({
+        "preview.browser.failure_reason": "browser_check_failed",
+        "preview.browser.ok": false,
+      });
+      return {
+        details: error instanceof Error ? error.message : "Unable to run browser check.",
+        ok: false,
+        reason: "browser_check_failed",
+      };
     }
-  } catch (error) {
-    return {
-      details: error instanceof Error ? error.message : "Unable to run browser check.",
-      ok: false,
-      reason: "browser_check_failed",
-    };
-  }
+  });
 }
 
 export async function syncPreviewHealth(session: E2BSandboxSession) {
@@ -458,62 +582,184 @@ export async function ensurePreviewServer(session: E2BSandboxSession) {
 }
 
 export async function recoverPreviewAfterEdit(session: E2BSandboxSession) {
-  const processAliveAfterWrite = await isPreviewProcessRunning(session);
-  appendLog(
-    session,
-    `Preview process after write: ${processAliveAfterWrite ? "running" : "stopped"}\n`,
-  );
+  return tracePreviewStage("preview recover_after_edit", async (recoverySpan) => {
+    let urlReachableAfterWrite = await tracePreviewStage(
+      "preview url_check",
+      async (span) => {
+        const reachable = await isPreviewUrlReachable(
+          session,
+          EDIT_PREVIEW_URL_CHECK_TIMEOUT_MS,
+        );
+        span.setAttribute("preview.url.reachable", reachable);
+        return reachable;
+      },
+      {
+        "preview.request.attempt": 1,
+        "preview.request.timeout_ms": EDIT_PREVIEW_URL_CHECK_TIMEOUT_MS,
+      },
+    );
 
-  const urlReachableAfterWrite = processAliveAfterWrite
-    ? await isPreviewUrlReachable(session)
-    : false;
-  appendLog(
-    session,
-    `Preview URL after write: ${urlReachableAfterWrite ? "reachable" : "unreachable"}\n`,
-  );
-
-  if (!processAliveAfterWrite || !urlReachableAfterWrite) {
-    appendLog(session, "Edit detected preview failure. Attempting one automatic restart...\n");
-
-    try {
-      await restartPreviewServer(session, "Restarting");
-      const recovered = await waitForPreview(session, session.previewVersion, {
-        timeoutMs: RESTART_PREVIEW_TIMEOUT_MS,
-        offlineMessage: "Preview crashed after the change and did not recover.",
-      });
+    let processAliveAfterWrite: boolean | undefined;
+    if (!urlReachableAfterWrite) {
+      processAliveAfterWrite = await tracePreviewStage(
+        "preview process_check",
+        async (span) => {
+          const running = await isPreviewProcessRunning(session);
+          span.setAttribute("preview.process.running", running);
+          return running;
+        },
+        {
+          "preview.request.timeout_ms": 10_000,
+        },
+      );
       appendLog(
         session,
-        `Automatic restart result: ${recovered ? "recovered" : "not recovered"}\n`,
+        `Preview process after write: ${processAliveAfterWrite ? "running" : "stopped"}\n`,
       );
-      return recovered;
-    } catch (error) {
-      appendLog(session, `Automatic restart failed: ${describeSessionError(session, error)}\n`);
-      await verifySandboxHealth(session);
-      setPreviewState(
-        session,
-        "offline",
-        "Preview crashed after the change. Restart the preview.",
-      );
-      return false;
-    }
-  }
 
-  const fresh = await waitForPreview(session, session.previewVersion, {
-    timeoutMs: EDIT_PREVIEW_TIMEOUT_MS,
-    offlineMessage: "Preview unavailable after the change. Restart the preview.",
-  });
-  if (fresh) {
-    const contentOk = await applyViteReactPreviewContentCheck(session);
+      if (processAliveAfterWrite) {
+        await tracePreviewStage(
+          "preview url_retry_delay",
+          async () =>
+            new Promise((resolve) =>
+              setTimeout(resolve, EDIT_PREVIEW_URL_RETRY_DELAY_MS),
+            ),
+          {
+            "preview.retry_delay_ms": EDIT_PREVIEW_URL_RETRY_DELAY_MS,
+          },
+        );
+        urlReachableAfterWrite = await tracePreviewStage(
+          "preview url_check",
+          async (span) => {
+            const reachable = await isPreviewUrlReachable(
+              session,
+              EDIT_PREVIEW_URL_CHECK_TIMEOUT_MS,
+            );
+            span.setAttribute("preview.url.reachable", reachable);
+            return reachable;
+          },
+          {
+            "preview.request.attempt": 2,
+            "preview.request.timeout_ms": EDIT_PREVIEW_URL_CHECK_TIMEOUT_MS,
+          },
+        );
+      }
+    } else {
+      appendLog(session, "Preview process after write: not checked; URL is reachable.\n");
+    }
+
     appendLog(
       session,
-      `Preview content check: ${contentOk ? "passed" : session.previewState}\n`,
+      `Preview URL after write: ${urlReachableAfterWrite ? "reachable" : "unreachable"}\n`,
     );
-    return contentOk;
-  }
 
-  appendLog(
-    session,
-    `Edit freshness result: ${session.previewState}\n`,
-  );
-  return false;
+    recoverySpan.setAttributes({
+      "preview.process.status":
+        processAliveAfterWrite === undefined
+          ? "not_checked"
+          : processAliveAfterWrite
+            ? "running"
+            : "stopped",
+      "preview.url.reachable": urlReachableAfterWrite,
+    });
+
+    if (!urlReachableAfterWrite) {
+      appendLog(session, "Edit detected preview failure. Attempting one automatic restart...\n");
+
+      try {
+        await restartPreviewServer(session, "Restarting");
+        const recovered = await tracePreviewStage(
+          "preview readiness_wait",
+          async (span) => {
+            const ready = await waitForPreview(session, session.previewVersion, {
+              timeoutMs: RESTART_PREVIEW_TIMEOUT_MS,
+              offlineMessage: "Preview crashed after the change and did not recover.",
+            });
+            span.setAttributes({
+              "preview.ready": ready,
+              "preview.state": session.previewState,
+            });
+            return ready;
+          },
+          {
+            "preview.wait.reason": "after_restart",
+            "preview.wait.timeout_ms": RESTART_PREVIEW_TIMEOUT_MS,
+          },
+        );
+        appendLog(
+          session,
+          `Automatic restart result: ${recovered ? "recovered" : "not recovered"}\n`,
+        );
+        recoverySpan.setAttributes({
+          "preview.recovery.path": "restart",
+          "preview.recovery.success": recovered,
+        });
+        return recovered;
+      } catch (error) {
+        appendLog(session, `Automatic restart failed: ${describeSessionError(session, error)}\n`);
+        await tracePreviewStage(
+          "preview sandbox_health_check",
+          async () => verifySandboxHealth(session),
+        );
+        setPreviewState(
+          session,
+          "offline",
+          "Preview crashed after the change. Restart the preview.",
+        );
+        recoverySpan.setAttributes({
+          "preview.recovery.path": "restart",
+          "preview.recovery.success": false,
+        });
+        return false;
+      }
+    }
+
+    const fresh = await tracePreviewStage(
+      "preview readiness_wait",
+      async (span) => {
+        const ready = await waitForPreview(session, session.previewVersion, {
+          timeoutMs: EDIT_PREVIEW_TIMEOUT_MS,
+          offlineMessage: "Preview unavailable after the change. Restart the preview.",
+        });
+        span.setAttributes({
+          "preview.ready": ready,
+          "preview.state": session.previewState,
+        });
+        return ready;
+      },
+      {
+        "preview.wait.reason": "after_edit",
+        "preview.wait.timeout_ms": EDIT_PREVIEW_TIMEOUT_MS,
+      },
+    );
+    if (fresh) {
+      const contentOk = await tracePreviewStage(
+        "preview content_check",
+        async (span) => {
+          const ok = await applyViteReactPreviewContentCheck(session);
+          span.setAttribute("preview.content.ok", ok);
+          return ok;
+        },
+      );
+      appendLog(
+        session,
+        `Preview content check: ${contentOk ? "passed" : session.previewState}\n`,
+      );
+      recoverySpan.setAttributes({
+        "preview.recovery.path": "healthy",
+        "preview.recovery.success": contentOk,
+      });
+      return contentOk;
+    }
+
+    appendLog(
+      session,
+      `Edit freshness result: ${session.previewState}\n`,
+    );
+    recoverySpan.setAttributes({
+      "preview.recovery.path": "freshness_timeout",
+      "preview.recovery.success": false,
+    });
+    return false;
+  });
 }
