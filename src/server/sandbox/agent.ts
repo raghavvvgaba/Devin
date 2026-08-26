@@ -39,6 +39,10 @@ import {
   getSandboxAgentTool,
   type SandboxAgentToolName,
 } from "~/server/sandbox/tools/registry";
+import {
+  SandboxAgentToolError,
+  type SandboxAgentToolTraceAttributes,
+} from "~/server/sandbox/tools/types";
 import { sandboxProvider } from "~/server/sandbox/provider";
 import { IncrementalJsonStringField } from "~/server/sandbox/incremental-json-string";
 import type {
@@ -124,12 +128,14 @@ type AgentToolSuccess = {
 type AgentToolFailure = {
   argumentValidationFailure: boolean;
   code: string;
+  details?: Record<string, unknown>;
   latestObservation: string;
   message: string;
   recentEvent: string;
   status: "tool_failure";
   tool: string;
   toolMessageContent: string;
+  traceAttributes?: SandboxAgentToolTraceAttributes;
 };
 
 type AgentToolSkipped = {
@@ -356,9 +362,17 @@ type AgentRetryExhaustedResult = {
 type ToolFailureMessageInput = {
   argumentsValue: Record<string, unknown>;
   code: string;
+  details?: Record<string, unknown>;
   message: string;
   retryable: boolean;
   tool: string;
+};
+
+type ToolFailureResultOptions = {
+  code?: string;
+  details?: Record<string, unknown>;
+  retryable?: boolean;
+  traceAttributes?: SandboxAgentToolTraceAttributes;
 };
 
 function previewText(value: string, maxLength = 220) {
@@ -507,6 +521,7 @@ function buildToolFailureMessageContent(input: ToolFailureMessageInput) {
   return JSON.stringify({
     arguments: input.argumentsValue,
     code: input.code,
+    ...(input.details ? { details: input.details } : {}),
     message: input.message,
     ok: false,
     retryable: input.retryable,
@@ -519,10 +534,14 @@ function buildToolFailureResult(
   message: string,
   argumentsValue: Record<string, unknown>,
   argumentValidationFailure = false,
+  options: ToolFailureResultOptions = {},
 ): AgentToolFailure {
+  const code = options.code ?? message;
+
   return {
     argumentValidationFailure,
-    code: message,
+    code,
+    ...(options.details ? { details: options.details } : {}),
     latestObservation: formatToolFeedback(tool, message),
     message,
     recentEvent: `${tool} failed: ${message}.`,
@@ -530,11 +549,15 @@ function buildToolFailureResult(
     tool,
     toolMessageContent: buildToolFailureMessageContent({
       argumentsValue,
-      code: message,
+      code,
+      details: options.details,
       message,
-      retryable: true,
+      retryable: options.retryable ?? true,
       tool,
     }),
+    ...(options.traceAttributes
+      ? { traceAttributes: options.traceAttributes }
+      : {}),
   };
 }
 
@@ -942,6 +965,7 @@ async function recordAgentToolResult(
       arguments: summary.arguments,
       argumentsPreview: summary.argumentsPreview,
       code: "code" in result ? result.code : undefined,
+      details: "details" in result ? result.details : undefined,
       latestObservationPreview: summary.latestObservationPreview,
       message: "message" in result ? result.message : undefined,
       recentEvent: result.recentEvent,
@@ -1086,7 +1110,7 @@ async function callAgentToolTurn(
   return traceAgentModelRequest({
     generate: () =>
       aiProvider.generateText({
-        maxTokens: 1_500,
+        maxTokens: 3_000,
         messages: state.transcript,
         ...(model ? { model } : {}),
         temperature: 0.1,
@@ -1274,10 +1298,13 @@ async function executeToolCallCore(
   } catch (error) {
     const argumentValidationFailure =
       error instanceof SyntaxError || error instanceof z.ZodError;
+    const structuredToolError =
+      error instanceof SandboxAgentToolError ? error : undefined;
     const argumentsValue =
       error instanceof SyntaxError
         ? { _raw: toolCall.function.arguments }
-        : parseToolCallArguments(toolCall);
+        : (structuredToolError?.safeArguments ??
+          parseToolCallArguments(toolCall));
     const message =
       error instanceof SyntaxError
         ? "invalid_tool_arguments_json"
@@ -1288,6 +1315,14 @@ async function executeToolCallCore(
       message,
       argumentsValue,
       argumentValidationFailure,
+      structuredToolError
+        ? {
+            code: structuredToolError.code,
+            details: structuredToolError.details,
+            retryable: structuredToolError.retryable,
+            traceAttributes: structuredToolError.traceAttributes,
+          }
+        : {},
     );
   }
 }
@@ -1328,6 +1363,13 @@ async function executeToolCall(
         const summary = buildAgentToolTraceSummary(toolCall, result);
 
         span.setAttribute("agent.tool.status", result.status);
+
+        if (
+          result.status === "tool_failure" &&
+          result.traceAttributes
+        ) {
+          span.setAttributes(result.traceAttributes);
+        }
 
         if (summary.paths.length > 0) {
           span.setAttribute("agent.tool.paths", summary.paths);

@@ -20,10 +20,12 @@ Tool-use rules:
 - Use glob_files to discover files by path pattern and search_code to locate text inside files. Then inspect every line included in oldText with read_file before using replace_in_file.
 - Keep search_code literal by default. Use include patterns to narrow file types and regex only when literal search cannot express the query.
 - Prefer bounded reads first.
-- Request a full-file read only immediately before writing that file.
+- Request a full-file read only when a genuine full rewrite requires write_file. Use bounded reads for targeted edits.
 - Only write files you have already inspected.
-- Prefer replace_in_file for targeted single-line or multiline edits after inspecting the relevant lines. Include enough exact surrounding text in oldText for it to match only once.
-- Use write_file for full rewrites or new complete file contents.
+- Use replace_in_file for targeted single-line or multiline edits after inspecting the relevant lines.
+- In replace_in_file, make oldText the smallest exact block that matches only once. Include only the surrounding text needed for uniqueness; do not copy an entire file, component, function, or large unrelated section when a smaller block identifies the edit.
+- Never replace the entire file for a localized change, including small text changes, property updates, or reordering items within one section.
+- Use write_file only for new files or when the requested change genuinely requires rewriting most or all of an existing file.
 
 Coding behavior:
 - Follow the repository's existing patterns, libraries, framework choices, naming, and style.

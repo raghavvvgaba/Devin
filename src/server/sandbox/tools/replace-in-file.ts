@@ -6,7 +6,10 @@ import { z } from "zod";
 
 import { sandboxProvider } from "~/server/sandbox/provider";
 import { assertSandboxFileContentSize } from "~/server/sandbox/tools/files";
-import type { SandboxAgentToolDefinition } from "~/server/sandbox/tools/types";
+import {
+  SandboxAgentToolError,
+  type SandboxAgentToolDefinition,
+} from "~/server/sandbox/tools/types";
 import type { SandboxSession } from "~/server/sandbox/types";
 
 import DESCRIPTION from "./replace.txt";
@@ -94,6 +97,39 @@ export async function replaceSandboxFileText(
   }
 
   const matchIndex = occurrenceIndexes[0]!;
+  const contentBeforeMatch = normalizedContent.slice(0, matchIndex);
+  const contentAfterMatch = normalizedContent.slice(
+    matchIndex + input.oldText.length,
+  );
+
+  if (!contentBeforeMatch.trim() && !contentAfterMatch.trim()) {
+    const fileCharacterCount = normalizedContent.length;
+    const oldTextCharacterCount = input.oldText.length;
+    const coverage = oldTextCharacterCount / fileCharacterCount;
+
+    throw new SandboxAgentToolError(
+      "Retry with the smallest uniquely matching section. Use write_file only when the requested change genuinely requires a full-file rewrite.",
+      {
+        code: "replacement_too_large",
+        details: {
+          coverage,
+          fileCharacterCount,
+          oldTextCharacterCount,
+        },
+        safeArguments: {
+          path: input.path,
+        },
+        traceAttributes: {
+          "agent.tool.guard_rejected": true,
+          "agent.tool.replace.coverage": coverage,
+          "agent.tool.replace.file_character_count": fileCharacterCount,
+          "agent.tool.replace.old_text_character_count":
+            oldTextCharacterCount,
+        },
+      },
+    );
+  }
+
   const startLine = getLineNumberAtOffset(normalizedContent, matchIndex);
   const content = [
     normalizedContent.slice(0, matchIndex),

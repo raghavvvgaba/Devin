@@ -4,8 +4,11 @@ Usage:
 - Use this for targeted single-line or multiline edits after reading the relevant lines.
 - `path` should be a repository-relative file path.
 - `oldText` must match the current file exactly and may span multiple lines.
-- Include enough surrounding text in `oldText` for it to match exactly once.
+- Make `oldText` the smallest exact block that matches exactly once.
+- Include only enough surrounding text to make the match unique.
+- Do not include the entire file, component, function, or unrelated sections when a smaller block can identify the edit.
+- For localized changes such as text updates, property changes, or reordering items within one section, replace only that section.
 - `newText` may span multiple lines.
 - If no exact match exists, read the relevant lines again before retrying.
 - If multiple exact matches exist, provide more surrounding text to identify one unique match.
-- Use write_file instead for full rewrites or new complete file contents.
+- Use write_file only for new files or genuine full-file rewrites.

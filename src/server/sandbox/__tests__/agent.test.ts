@@ -400,6 +400,8 @@ describe("runSandboxAgent", () => {
     expect(modelSpans.map((span) => span.attributes["agent.step"])).toEqual([
       1, 2,
     ]);
+    expect(getModelCall(0)?.maxTokens).toBe(3_000);
+    expect(getModelCall(1)?.maxTokens).toBe(1_500);
     expect(runCommandMock).not.toHaveBeenCalled();
     for (const span of modelSpans) {
       expect(span.kind).toBe(SpanKind.CLIENT);
