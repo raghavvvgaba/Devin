@@ -1,3 +1,6 @@
+import { trace } from "@opentelemetry/api";
+import { TimeoutError } from "e2b";
+
 import {
   getRunningSandboxToolSession,
 } from "~/server/sandbox/providers/e2b/lifecycle";
@@ -20,15 +23,63 @@ import type {
   SandboxRawWriteFileInput,
 } from "~/server/sandbox/types";
 
+const RAW_FILE_READ_TIMEOUT_MS = 5_000;
+const MAX_RAW_FILE_READ_ATTEMPTS = 2;
+
 export async function readRawSandboxFile(
   input: SandboxRawFileInput,
 ): Promise<SandboxRawFile> {
   const session = await getRunningSandboxToolSession(input.sessionId);
   const relativePath = normalizeSandboxRelativePath(input.path);
   const sandboxPath = toSandboxRepoPath(relativePath);
-  const content = await session.sandbox!.files.read(sandboxPath, {
-    requestTimeoutMs: 15_000,
-  });
+  const activeSpan = trace.getActiveSpan();
+  let content: string | undefined;
+
+  for (let attempt = 1; attempt <= MAX_RAW_FILE_READ_ATTEMPTS; attempt += 1) {
+    const startedAt = Date.now();
+
+    try {
+      content = await session.sandbox!.files.read(sandboxPath, {
+        requestTimeoutMs: RAW_FILE_READ_TIMEOUT_MS,
+      });
+
+      activeSpan?.addEvent("agent.tool.read.attempt", {
+        "agent.tool.read.attempt": attempt,
+        "agent.tool.read.duration_ms": Date.now() - startedAt,
+        "agent.tool.read.status": "success",
+        "agent.tool.read.timeout_ms": RAW_FILE_READ_TIMEOUT_MS,
+      });
+      activeSpan?.setAttributes({
+        "agent.tool.read.attempt_count": attempt,
+        "agent.tool.read.retry_count": attempt - 1,
+        "agent.tool.read.retry_recovered": attempt > 1,
+      });
+      break;
+    } catch (error) {
+      const retryable = error instanceof TimeoutError;
+      const hasAttemptsRemaining = attempt < MAX_RAW_FILE_READ_ATTEMPTS;
+
+      activeSpan?.addEvent("agent.tool.read.attempt", {
+        "agent.tool.read.attempt": attempt,
+        "agent.tool.read.duration_ms": Date.now() - startedAt,
+        "agent.tool.read.status": retryable ? "timeout" : "failure",
+        "agent.tool.read.timeout_ms": RAW_FILE_READ_TIMEOUT_MS,
+      });
+
+      if (!retryable || !hasAttemptsRemaining) {
+        activeSpan?.setAttributes({
+          "agent.tool.read.attempt_count": attempt,
+          "agent.tool.read.retry_count": attempt - 1,
+          "agent.tool.read.retry_recovered": false,
+        });
+        throw error;
+      }
+    }
+  }
+
+  if (content === undefined) {
+    throw new Error("Sandbox file read completed without content.");
+  }
 
   return {
     content,

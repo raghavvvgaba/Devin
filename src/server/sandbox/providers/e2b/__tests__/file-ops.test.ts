@@ -72,7 +72,7 @@ beforeEach(() => {
 });
 
 describe("file-ops timeouts", () => {
-  it("reads sandbox files with a 15 second timeout", async () => {
+  it("reads sandbox files with a 5 second timeout", async () => {
     readMock.mockResolvedValue("alpha");
 
     await readRawSandboxFile({
@@ -81,7 +81,7 @@ describe("file-ops timeouts", () => {
     });
 
     expect(readMock).toHaveBeenCalledWith("/home/user/repo/src/app/page.tsx", {
-      requestTimeoutMs: 15_000,
+      requestTimeoutMs: 5_000,
     });
   });
 
