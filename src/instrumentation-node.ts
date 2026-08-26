@@ -6,7 +6,7 @@ import {
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 
-import { createHeartbeatFilteringSampler } from "~/server/observability/heartbeat-trace-sampler";
+import { createApplicationTraceSampler } from "~/server/observability/heartbeat-trace-sampler";
 
 const traceExporterMode = process.env.OTEL_TRACES_EXPORTER ?? "otlp";
 const spanProcessors =
@@ -23,7 +23,7 @@ const spanProcessors =
       ];
 
 const sdk = new NodeSDK({
-  sampler: createHeartbeatFilteringSampler(),
+  sampler: createApplicationTraceSampler(),
   serviceName: process.env.OTEL_SERVICE_NAME ?? "inlaya-agent",
   spanProcessors,
 });

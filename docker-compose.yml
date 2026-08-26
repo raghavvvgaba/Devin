@@ -1,10 +1,14 @@
 services:
   jaeger:
     image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    command: ["--config", "/jaeger/config.yml"]
     ports:
       - "16686:16686"
       - "4317:4317"
       - "4318:4318"
+    volumes:
+      - ./jaeger-config.yml:/jaeger/config.yml:ro
+      - /Users/raghavvvgaba/Desktop/inlaya-log-data:/badger
 
   app:
     build:

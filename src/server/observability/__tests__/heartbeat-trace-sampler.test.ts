@@ -9,7 +9,7 @@ import {
 import { SamplingDecision } from "@opentelemetry/sdk-trace-base";
 import { describe, expect, it } from "vitest";
 
-import { createHeartbeatFilteringSampler } from "../heartbeat-trace-sampler";
+import { createApplicationTraceSampler } from "../heartbeat-trace-sampler";
 
 const TRACE_ID = "1234567890abcdef1234567890abcdef";
 const SPAN_ID = "1234567890abcdef";
@@ -19,7 +19,7 @@ function sample(input: {
   context?: Context;
   spanName: string;
 }) {
-  return createHeartbeatFilteringSampler().shouldSample(
+  return createApplicationTraceSampler().shouldSample(
     input.context ?? ROOT_CONTEXT,
     TRACE_ID,
     input.spanName,
@@ -29,7 +29,7 @@ function sample(input: {
   ).decision;
 }
 
-describe("createHeartbeatFilteringSampler", () => {
+describe("createApplicationTraceSampler", () => {
   it.each([
     [
       "project heartbeat",
@@ -64,15 +64,102 @@ describe("createHeartbeatFilteringSampler", () => {
   });
 
   it.each([
-    "/api/projects/project-1/sandbox/check-preview",
-    "/api/projects/project-1/sandbox/session",
-    "/api/projects/project-1/issues/24/sandbox/agent",
-    "/api/projects/project-1/issues/24/sandbox/heartbeat-status",
-    "/api/projects/project-1/issues/24/sandbox/restart-preview",
-  ])("keeps non-heartbeat route %s", (route) => {
+    [
+      "agent",
+      "/api/projects/[id]/issues/[issueNumber]/sandbox/agent/route",
+    ],
+    [
+      "sandbox start",
+      "/api/projects/[id]/issues/[issueNumber]/sandbox/start/route",
+    ],
+    [
+      "preview check",
+      "/api/projects/[id]/issues/[issueNumber]/sandbox/check-preview/route",
+    ],
+    [
+      "preview restart",
+      "/api/projects/[id]/issues/[issueNumber]/sandbox/restart-preview/route",
+    ],
+  ])("keeps the complete normalized %s route trace", (_label, route) => {
     expect(
       sample({
-        attributes: { "http.target": route },
+        attributes: {
+          "http.route": route,
+          "http.target": route,
+          "next.route": route,
+        },
+        spanName: `POST ${route}`,
+      }),
+    ).toBe(SamplingDecision.RECORD_AND_SAMPLED);
+  });
+
+  it.each([
+    [
+      "project session poll",
+      "/api/projects/project-1/sandbox/session?sessionId=sandbox-1",
+    ],
+    [
+      "issue session poll",
+      "/api/projects/project-1/issues/24/sandbox/session?sessionId=sandbox-1",
+    ],
+  ])("drops the complete %s trace", (_label, target) => {
+    expect(
+      sample({
+        attributes: { "http.method": "GET", "http.target": target },
+        spanName: `GET ${target}`,
+      }),
+    ).toBe(SamplingDecision.NOT_RECORD);
+  });
+
+  it("drops the complete chat deletion trace", () => {
+    const route = "/api/projects/[id]/issues/[issueNumber]/chat/route";
+    expect(
+      sample({
+        attributes: {
+          "http.method": "DELETE",
+          "http.route": route,
+          "http.target": "/api/projects/project-1/issues/24/chat",
+        },
+        spanName: `DELETE ${route}`,
+      }),
+    ).toBe(SamplingDecision.NOT_RECORD);
+  });
+
+  it.each([
+    ["agent", "/api/projects/project-1/issues/24/sandbox/agent"],
+    ["sandbox start", "/api/projects/project-1/issues/24/sandbox/start"],
+  ])(
+    "keeps the %s request before Next.js resolves its normalized route",
+    (_label, target) => {
+      expect(
+        sample({
+          attributes: { "http.target": target },
+          spanName: `POST ${target}`,
+        }),
+      ).toBe(SamplingDecision.RECORD_AND_SAMPLED);
+    },
+  );
+
+  it("continues dropping a raw session poll before route resolution", () => {
+    const target =
+      "/api/projects/project-1/issues/24/sandbox/session?sessionId=sandbox-1";
+    expect(
+      sample({
+        attributes: { "http.method": "GET", "http.target": target },
+        spanName: `GET ${target}`,
+      }),
+    ).toBe(SamplingDecision.NOT_RECORD);
+  });
+
+  it("keeps non-deletion chat requests", () => {
+    const route = "/api/projects/[id]/issues/[issueNumber]/chat/route";
+    expect(
+      sample({
+        attributes: {
+          "http.method": "POST",
+          "http.route": route,
+          "http.target": "/api/projects/project-1/issues/24/chat",
+        },
         spanName: `POST ${route}`,
       }),
     ).toBe(SamplingDecision.RECORD_AND_SAMPLED);

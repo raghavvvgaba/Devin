@@ -15,28 +15,73 @@ import {
 const HEARTBEAT_ROUTE_PATTERN =
   /(?:^|\s)\/api\/projects\/[^/?#\s]+\/(?:issues\/[^/?#\s]+\/)?sandbox\/heartbeat(?:\/route)?(?:[/?#\s]|$)/;
 
-const HEARTBEAT_ROUTE_ATTRIBUTE_KEYS = [
+const SESSION_ROUTE_PATTERN =
+  /^\/api\/projects\/[^/?#\s]+\/(?:issues\/[^/?#\s]+\/)?sandbox\/session(?:\/route)?\/?$/;
+
+const ISSUE_CHAT_ROUTE_PATTERN =
+  /^\/api\/projects\/[^/?#\s]+\/issues\/[^/?#\s]+\/chat(?:\/route)?\/?$/;
+
+const TRACE_ROUTE_ATTRIBUTE_KEYS = [
   "http.route",
   "http.target",
   "next.route",
   "next.span_name",
 ] as const;
 
+function getTraceCandidates(spanName: string, attributes: Attributes) {
+  return [
+    spanName,
+    ...TRACE_ROUTE_ATTRIBUTE_KEYS.map((key) => attributes[key]).filter(
+      (value): value is string => typeof value === "string",
+    ),
+  ];
+}
+
+function getRequestMethod(spanName: string, attributes: Attributes) {
+  const attributeMethod =
+    attributes["http.request.method"] ?? attributes["http.method"];
+  if (typeof attributeMethod === "string") {
+    return attributeMethod.toUpperCase();
+  }
+
+  return spanName.match(/^([A-Z]+)\s+/)?.[1];
+}
+
+function getRoutePath(candidate: string) {
+  const withoutMethod = candidate.replace(/^[A-Z]+\s+/, "");
+  return withoutMethod.split(/[?#]/, 1)[0] ?? withoutMethod;
+}
+
 export function isHeartbeatTrace(
   spanName: string,
   attributes: Attributes,
 ) {
-  const candidates = [
-    spanName,
-    ...HEARTBEAT_ROUTE_ATTRIBUTE_KEYS.map((key) => attributes[key]).filter(
-      (value): value is string => typeof value === "string",
-    ),
-  ];
-
-  return candidates.some((candidate) => HEARTBEAT_ROUTE_PATTERN.test(candidate));
+  return getTraceCandidates(spanName, attributes).some((candidate) =>
+    HEARTBEAT_ROUTE_PATTERN.test(candidate),
+  );
 }
 
-class HeartbeatRootSampler implements Sampler {
+export function isBackgroundRouteTrace(
+  spanName: string,
+  attributes: Attributes,
+) {
+  const method = getRequestMethod(spanName, attributes);
+  const paths = getTraceCandidates(spanName, attributes).map(getRoutePath);
+
+  if (
+    method === "GET" &&
+    paths.some((path) => SESSION_ROUTE_PATTERN.test(path))
+  ) {
+    return true;
+  }
+
+  return (
+    method === "DELETE" &&
+    paths.some((path) => ISSUE_CHAT_ROUTE_PATTERN.test(path))
+  );
+}
+
+class ApplicationRootSampler implements Sampler {
   constructor(private readonly delegate: Sampler) {}
 
   shouldSample(
@@ -47,7 +92,10 @@ class HeartbeatRootSampler implements Sampler {
     attributes: Attributes,
     links: Link[],
   ): SamplingResult {
-    if (isHeartbeatTrace(spanName, attributes)) {
+    if (
+      isHeartbeatTrace(spanName, attributes) ||
+      isBackgroundRouteTrace(spanName, attributes)
+    ) {
       return { decision: SamplingDecision.NOT_RECORD };
     }
 
@@ -62,17 +110,17 @@ class HeartbeatRootSampler implements Sampler {
   }
 
   toString() {
-    return `HeartbeatRootSampler{delegate=${this.delegate.toString()}}`;
+    return `ApplicationRootSampler{delegate=${this.delegate.toString()}}`;
   }
 }
 
-export function createHeartbeatFilteringSampler() {
-  const heartbeatRootSampler = new HeartbeatRootSampler(
+export function createApplicationTraceSampler() {
+  const applicationRootSampler = new ApplicationRootSampler(
     new AlwaysOnSampler(),
   );
 
   return new ParentBasedSampler({
-    remoteParentSampled: heartbeatRootSampler,
-    root: heartbeatRootSampler,
+    remoteParentSampled: applicationRootSampler,
+    root: applicationRootSampler,
   });
 }
