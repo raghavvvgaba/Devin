@@ -35,7 +35,7 @@ import { sandboxSessionUpdatedEvent } from "~/lib/sandbox-events";
 import { cn } from "~/lib/utils";
 
 type SandboxStatus = "starting" | "installing" | "running" | "stopped" | "error";
-type PreviewState = "ready" | "recovering" | "stale" | "offline";
+type PreviewState = "ready" | "recovering" | "offline";
 type StartupStage =
   | "creating"
   | "scaffolding"

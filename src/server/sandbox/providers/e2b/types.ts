@@ -56,8 +56,6 @@ export type E2BSandboxSession = {
   previewState: PreviewState;
   previewError?: string;
   previewMessage?: string;
-  previewVersion?: string;
-  previewObservedVersion?: string;
   startupStage?: StartupStage;
   startupMessage?: string;
   submitState?: SandboxSubmitState;

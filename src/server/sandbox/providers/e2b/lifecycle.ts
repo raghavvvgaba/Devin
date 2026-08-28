@@ -15,7 +15,6 @@ import {
   PREVIEW_PORT,
   PROJECT_DIR,
   RESTART_PREVIEW_TIMEOUT_MS,
-  RESTORE_PREVIEW_TIMEOUT_MS,
   SANDBOX_METADATA_APP,
   SANDBOX_TIMEOUT_MS,
   STARTUP_PREVIEW_TIMEOUT_MS,
@@ -161,7 +160,7 @@ async function continueSandboxStartup(
     setStartupStage(session, "starting-preview", "Starting preview");
     await verifySandboxHealth(session);
     await startPreviewServer(session);
-    const previewReady = await waitForPreview(session, session.previewVersion, {
+    const previewReady = await waitForPreview(session, {
       timeoutMs: STARTUP_PREVIEW_TIMEOUT_MS,
     });
     if (!previewReady) {
@@ -451,12 +450,6 @@ export async function restoreSandboxSession({
     }
     await verifySandboxHealth(existing);
     await ensurePreviewServer(existing);
-    if (existing.previewVersion) {
-      await waitForPreview(existing, existing.previewVersion, {
-        timeoutMs: RESTORE_PREVIEW_TIMEOUT_MS,
-        offlineMessage: "Preview unavailable while restoring the session.",
-      });
-    }
     return publicSession(existing);
   }
 
@@ -517,12 +510,6 @@ export async function restoreSandboxSession({
   session.previewProcessId = previewProcess?.pid;
 
   await ensurePreviewServer(session);
-  if (session.previewVersion) {
-    await waitForPreview(session, session.previewVersion, {
-      timeoutMs: RESTORE_PREVIEW_TIMEOUT_MS,
-      offlineMessage: "Preview unavailable while restoring the session.",
-    });
-  }
   return publicSession(session);
 }
 
@@ -697,7 +684,7 @@ export async function restartSandboxPreview(sessionId: string) {
   );
   await session.restartingPreview;
   await verifySandboxHealth(session);
-  await waitForPreview(session, session.previewVersion, {
+  await waitForPreview(session, {
     timeoutMs: RESTART_PREVIEW_TIMEOUT_MS,
   });
 

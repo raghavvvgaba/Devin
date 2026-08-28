@@ -92,8 +92,6 @@ export function publicSession(session: E2BSandboxSession): PublicSandboxSession 
     previewState: session.previewState,
     previewError: session.previewError,
     previewMessage: session.previewMessage,
-    previewVersion: session.previewVersion,
-    previewObservedVersion: session.previewObservedVersion,
     startupStage: session.startupStage,
     startupMessage: session.startupMessage,
     submitState: session.submitState,
@@ -156,8 +154,6 @@ export function stoppedSession(
     previewState: "offline" as const,
     previewError: undefined,
     previewMessage: undefined,
-    previewVersion: undefined,
-    previewObservedVersion: undefined,
     startupStage: undefined,
     startupMessage: undefined,
   };

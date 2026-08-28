@@ -11,7 +11,6 @@ import {
   EDIT_PREVIEW_TIMEOUT_MS,
   PREVIEW_PORT,
   PREVIEW_RETRY_DELAY_MS,
-  PREVIEW_VERSION_PATH,
   RESTART_PREVIEW_TIMEOUT_MS,
   STARTUP_PREVIEW_TIMEOUT_MS,
 } from "~/server/sandbox/providers/e2b/constants";
@@ -84,35 +83,13 @@ export type VitePreviewContentCheckResult =
         | "runtime_error_marker";
     };
 
-function getPreviewVersionUrl(session: E2BSandboxSession) {
-  return `${session.previewUrl.replace(/\/$/, "")}/${PREVIEW_VERSION_PATH}`;
-}
-
-async function fetchPreviewVersion(session: E2BSandboxSession) {
-  try {
-    const response = await fetch(`${getPreviewVersionUrl(session)}?t=${Date.now()}`, {
-      signal: AbortSignal.timeout(4000),
-      cache: "no-store",
-    });
-
-    if (!response.ok) return null;
-
-    const version = (await response.text()).trim();
-    return version || null;
-  } catch {
-    return null;
-  }
-}
-
 export async function waitForPreview(
   session: E2BSandboxSession,
-  expectedVersion?: string,
   options: { timeoutMs?: number; retryDelayMs?: number; offlineMessage?: string } = {},
 ) {
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? STARTUP_PREVIEW_TIMEOUT_MS;
   const retryDelayMs = options.retryDelayMs ?? PREVIEW_RETRY_DELAY_MS;
-  let lastObservedVersion: string | undefined;
 
   while (Date.now() - startedAt < timeoutMs) {
     try {
@@ -126,35 +103,11 @@ export async function waitForPreview(
         continue;
       }
 
-      const observedVersion = await fetchPreviewVersion(session);
-      if (observedVersion) {
-        session.previewObservedVersion = observedVersion;
-        lastObservedVersion = observedVersion;
-      }
-
-      if (!expectedVersion || observedVersion === expectedVersion) {
-        if (!session.previewVersion && observedVersion) {
-          session.previewVersion = observedVersion;
-        }
-        setPreviewState(session, "ready", "Preview ready.");
-        return true;
-      }
+      setPreviewState(session, "ready", "Preview ready.");
+      return true;
     } catch {}
 
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-  }
-
-  if (expectedVersion && lastObservedVersion && lastObservedVersion !== expectedVersion) {
-    setPreviewState(
-      session,
-      "stale",
-      "Change saved. Refresh the preview tab if it still looks old.",
-    );
-    appendLog(
-      session,
-      `\nPreview is reachable but still serving ${lastObservedVersion} instead of ${expectedVersion}. Refresh may be needed.\n`,
-    );
-    return false;
   }
 
   setPreviewState(
@@ -500,23 +453,6 @@ export async function syncPreviewHealth(session: E2BSandboxSession) {
   const urlReachable = await isPreviewUrlReachable(session);
 
   if (urlReachable) {
-    const observedVersion = await fetchPreviewVersion(session);
-    if (observedVersion) {
-      session.previewObservedVersion = observedVersion;
-      if (!session.previewVersion) {
-        session.previewVersion = observedVersion;
-      }
-    }
-
-    if (session.previewVersion && observedVersion && observedVersion !== session.previewVersion) {
-      setPreviewState(
-        session,
-        "stale",
-        "Change saved. Refresh the preview tab if it still looks old.",
-      );
-      return true;
-    }
-
     setPreviewState(session, "ready", "Preview ready.");
     return true;
   }
@@ -548,16 +484,11 @@ export async function ensurePreviewServer(session: E2BSandboxSession) {
 
     try {
       await restartPreviewServer(session);
-      const recovered = await waitForPreview(session, session.previewVersion, {
+      const recovered = await waitForPreview(session, {
         timeoutMs: RESTART_PREVIEW_TIMEOUT_MS,
       });
       if (recovered) {
         appendLog(session, "Preview server recovered.\n");
-        return;
-      }
-
-      if (session.previewState === "stale") {
-        appendLog(session, "Preview server is up, but the latest change has not appeared yet.\n");
         return;
       }
 
@@ -671,7 +602,7 @@ export async function recoverPreviewAfterEdit(session: E2BSandboxSession) {
         const recovered = await tracePreviewStage(
           "preview readiness_wait",
           async (span) => {
-            const ready = await waitForPreview(session, session.previewVersion, {
+            const ready = await waitForPreview(session, {
               timeoutMs: RESTART_PREVIEW_TIMEOUT_MS,
               offlineMessage: "Preview crashed after the change and did not recover.",
             });
@@ -717,7 +648,7 @@ export async function recoverPreviewAfterEdit(session: E2BSandboxSession) {
     const fresh = await tracePreviewStage(
       "preview readiness_wait",
       async (span) => {
-        const ready = await waitForPreview(session, session.previewVersion, {
+        const ready = await waitForPreview(session, {
           timeoutMs: EDIT_PREVIEW_TIMEOUT_MS,
           offlineMessage: "Preview unavailable after the change. Restart the preview.",
         });

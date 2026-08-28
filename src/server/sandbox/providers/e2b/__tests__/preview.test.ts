@@ -199,7 +199,6 @@ describe("recoverPreviewAfterEdit", () => {
       .fn()
       .mockResolvedValueOnce(response("ok"))
       .mockResolvedValueOnce(response("ok"))
-      .mockResolvedValueOnce(response("", { status: 404 }))
       .mockResolvedValueOnce(
         response(`
           <html>
@@ -224,7 +223,6 @@ describe("recoverPreviewAfterEdit", () => {
       .fn()
       .mockResolvedValueOnce(response("ok"))
       .mockResolvedValueOnce(response("ok"))
-      .mockResolvedValueOnce(response("", { status: 404 }))
       .mockResolvedValueOnce(
         response(`<!doctype html>
           <html>
