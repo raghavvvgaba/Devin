@@ -314,7 +314,7 @@ export async function createSandboxSession(input: StartSessionInput) {
 
   if (reusable) {
     const restored = await restoreActiveSandboxSession(reusable.sessionId);
-    if (restored) {
+    if (restored && restored.status !== "stopped") {
       return restored;
     }
   }

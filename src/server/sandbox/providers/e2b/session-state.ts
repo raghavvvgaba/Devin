@@ -5,6 +5,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
 } from "~/server/sandbox/providers/e2b/constants";
 import type { E2BSandboxSession } from "~/server/sandbox/providers/e2b/types";
+import { markSandboxSessionStopped } from "~/server/sandbox/session-registry";
 import type {
   PreviewState,
   SandboxSession as PublicSandboxSession,
@@ -218,6 +219,20 @@ export function clearAbandonmentCheck(session: E2BSandboxSession) {
   }
 }
 
+async function persistAbandonedSessionStopped(session: E2BSandboxSession) {
+  try {
+    await markSandboxSessionStopped(session.sessionId);
+  } catch (error) {
+    appendLog(
+      session,
+      `Unable to persist inactivity cleanup: ${describeSessionError(
+        session,
+        error,
+      )}\n`,
+    );
+  }
+}
+
 async function abandonSession(session: E2BSandboxSession) {
   clearAbandonmentCheck(session);
 
@@ -242,6 +257,7 @@ async function abandonSession(session: E2BSandboxSession) {
     session.startupMessage = undefined;
     session.sandbox = undefined;
     session.previewProcessId = undefined;
+    await persistAbandonedSessionStopped(session);
     appendLog(session, "Sandbox stopped after inactivity.\n");
   } catch (error) {
     if (isSandboxNotFoundError(error)) {
@@ -253,6 +269,7 @@ async function abandonSession(session: E2BSandboxSession) {
       session.startupMessage = undefined;
       session.sandbox = undefined;
       session.previewProcessId = undefined;
+      await persistAbandonedSessionStopped(session);
       appendLog(
         session,
         "Sandbox was already gone during inactivity cleanup.\n",
