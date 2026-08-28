@@ -98,13 +98,24 @@ export async function writeRawSandboxFile(input: SandboxRawWriteFileInput) {
   });
   appendLog(session, `\nWrote ${relativePath}\n`);
 
-  setPreviewState(session, "recovering", "Saving change and refreshing preview.");
-  await recoverPreviewAfterEdit(session);
+  if (!input.deferPreviewRecovery) {
+    setPreviewState(session, "recovering", "Saving change and refreshing preview.");
+    await recoverPreviewAfterEdit(session);
+  }
 
   return {
     path: relativePath,
     session: publicSession(session),
   };
+}
+
+export async function recoverSandboxPreviewAfterWrites(sessionId: string) {
+  const session = await getRunningSandboxToolSession(sessionId);
+
+  setPreviewState(session, "recovering", "Changes saved. Refreshing preview.");
+  await recoverPreviewAfterEdit(session);
+
+  return publicSession(session);
 }
 
 export async function listRawSandboxFiles(

@@ -58,6 +58,7 @@ export type SandboxFileInput = {
 
 export type SandboxWriteFileInput = SandboxFileInput & {
   content: string;
+  deferPreviewRecovery?: boolean;
 };
 
 export type SandboxListFilesInput = {
@@ -117,6 +118,7 @@ export type SandboxRawFile = {
 
 export type SandboxRawWriteFileInput = {
   content: string;
+  deferPreviewRecovery?: boolean;
   path: string;
   sessionId: string;
 };
@@ -233,5 +235,6 @@ export type SandboxProvider = {
   start: (input: StartSandboxSessionInput) => Promise<SandboxSession>;
   stop: (input: StopSandboxSessionInput) => Promise<SandboxSession>;
   checkPreview: (sessionId: string) => Promise<SandboxSession>;
+  recoverPreviewAfterWrites: (sessionId: string) => Promise<SandboxSession>;
   writeRawFile: (input: SandboxRawWriteFileInput) => Promise<{ path: string; session: SandboxSession }>;
 };

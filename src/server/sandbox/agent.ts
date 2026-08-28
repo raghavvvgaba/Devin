@@ -164,6 +164,10 @@ type AgentToolExecutionResult = AgentToolCallResult | AgentToolSkipped;
 
 type AgentModelPhase = "tool" | "finish";
 
+type AgentToolExecutionOptions = {
+  deferPreviewRecovery?: boolean;
+};
+
 type ToolTurnClassification =
   | {
       status: "finish";
@@ -1185,6 +1189,7 @@ async function executeToolCallCore(
   toolCall: AIToolCall,
   sessionId: string,
   mode: SandboxAgentMode,
+  options: AgentToolExecutionOptions = {},
 ): Promise<AgentToolCallResult> {
   if (!isSandboxAgentToolName(toolCall.function.name)) {
     return buildUnknownToolFailureResult(
@@ -1219,6 +1224,9 @@ async function executeToolCallCore(
       unknown
     >;
     const result = await tool.execute(parsedArguments, {
+      ...(options.deferPreviewRecovery
+        ? { deferPreviewRecovery: true }
+        : {}),
       sessionId,
     });
     const toolMessageContent = JSON.stringify(result);
@@ -1333,6 +1341,7 @@ async function executeToolCall(
   mode: SandboxAgentMode,
   step: number,
   parentSpan: Span,
+  options: AgentToolExecutionOptions = {},
 ): Promise<AgentToolCallResult> {
   const toolName = toolCall.function.name;
   const argumentsValue = parseToolArgumentsForTrace(
@@ -1359,7 +1368,12 @@ async function executeToolCall(
     trace.setSpan(context.active(), parentSpan),
     async (span) => {
       try {
-        const result = await executeToolCallCore(toolCall, sessionId, mode);
+        const result = await executeToolCallCore(
+          toolCall,
+          sessionId,
+          mode,
+          options,
+        );
         const summary = buildAgentToolTraceSummary(toolCall, result);
 
         span.setAttribute("agent.tool.status", result.status);
@@ -1659,6 +1673,84 @@ async function executeReadOnlyBatch(
   };
 }
 
+function applyRecoveredSessionToLastWrite(
+  executed: ExecutedAgentTool[],
+  session: SandboxSession,
+) {
+  for (let index = executed.length - 1; index >= 0; index -= 1) {
+    const executedTool = executed[index]!;
+    const { result } = executedTool;
+
+    if (result.status !== "ok" || !result.touchedPath) continue;
+
+    const toolPayload = JSON.parse(result.toolMessageContent) as Record<
+      string,
+      unknown
+    >;
+
+    executed[index] = {
+      ...executedTool,
+      result: {
+        ...result,
+        session,
+        toolMessageContent: JSON.stringify({
+          ...toolPayload,
+          session,
+        }),
+      },
+    };
+    return;
+  }
+}
+
+async function recoverWriteBatchPreview(
+  sessionId: string,
+  successfulWriteCount: number,
+  step: number,
+  parentSpan: Span,
+) {
+  return sandboxAgentTracer.startActiveSpan(
+    "recover_write_batch_preview",
+    {
+      attributes: {
+        "agent.step": step,
+        "agent.write_batch.successful_write_count": successfulWriteCount,
+      },
+      kind: SpanKind.INTERNAL,
+    },
+    trace.setSpan(context.active(), parentSpan),
+    async (span) => {
+      try {
+        const session = await sandboxProvider.recoverPreviewAfterWrites(
+          sessionId,
+        );
+        span.setAttributes({
+          "agent.write_batch.preview_state": session.previewState,
+          "agent.write_batch.recovery_completed": true,
+        });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return session;
+      } catch (error) {
+        const exception =
+          error instanceof Error ? error : new Error(String(error));
+
+        span.recordException(exception);
+        span.setAttributes({
+          "agent.write_batch.recovery_completed": false,
+          "error.type": exception.name || "Error",
+        });
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: toTracePreview(exception.message, 220),
+        });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
 async function executeWriteBatch(
   toolCalls: AIToolCall[],
   sessionId: string,
@@ -1669,7 +1761,9 @@ async function executeWriteBatch(
 ): Promise<AgentToolBatchResult> {
   const executed: ExecutedAgentTool[] = [];
   const touchedPaths: string[] = [];
+  let fatalFailure: AgentToolInternalFatalFailure | undefined;
   let latestSession: SandboxSession | undefined;
+  let status: "ok" | "tool_failure" = "ok";
 
   for (const [index, toolCall] of toolCalls.entries()) {
     await beforeExecute(toolCall);
@@ -1680,6 +1774,7 @@ async function executeWriteBatch(
       mode,
       step,
       parentSpan,
+      { deferPreviewRecovery: true },
     );
     executed.push({
       durationMs: Date.now() - toolStartedAt,
@@ -1696,15 +1791,8 @@ async function executeWriteBatch(
     }
 
     if (result.status === "internal_fatal_failure") {
-      return {
-        code: result.code,
-        executed,
-        latestObservation: buildBatchObservation(executed),
-        latestSession,
-        message: result.message,
-        status: "internal_fatal_failure",
-        touchedPaths,
-      };
+      fatalFailure = result;
+      break;
     }
 
     if (result.status === "tool_failure") {
@@ -1715,22 +1803,50 @@ async function executeWriteBatch(
           toolCall: skippedToolCall,
         });
       }
+      status = "tool_failure";
+      break;
+    }
+  }
 
+  if (touchedPaths.length > 0) {
+    try {
+      latestSession = await recoverWriteBatchPreview(
+        sessionId,
+        touchedPaths.length,
+        step,
+        parentSpan,
+      );
+      applyRecoveredSessionToLastWrite(executed, latestSession);
+    } catch (error) {
       return {
+        code: "internal_error",
         executed,
         latestObservation: buildBatchObservation(executed),
         latestSession,
-        status: "tool_failure",
+        message: `The files were written, but preview verification could not complete: ${normalizeToolErrorMessage(error)}`,
+        status: "internal_fatal_failure",
         touchedPaths,
       };
     }
+  }
+
+  if (fatalFailure) {
+    return {
+      code: fatalFailure.code,
+      executed,
+      latestObservation: buildBatchObservation(executed),
+      latestSession,
+      message: fatalFailure.message,
+      status: "internal_fatal_failure",
+      touchedPaths,
+    };
   }
 
   return {
     executed,
     latestObservation: buildBatchObservation(executed),
     latestSession,
-    status: "ok",
+    status,
     touchedPaths,
   };
 }

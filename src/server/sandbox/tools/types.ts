@@ -32,6 +32,7 @@ export class SandboxAgentToolError extends Error {
 }
 
 export type SandboxAgentToolContext = {
+  deferPreviewRecovery?: boolean;
   sessionId: string;
 };
 

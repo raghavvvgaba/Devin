@@ -39,6 +39,9 @@ export const writeSandboxAgentTool = {
 
     return writeSandboxFile({
       content: parsedArguments.content,
+      ...(context.deferPreviewRecovery
+        ? { deferPreviewRecovery: true }
+        : {}),
       path: parsedArguments.path,
       sessionId: context.sessionId,
     });

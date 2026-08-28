@@ -17,6 +17,7 @@ import DESCRIPTION from "./replace.txt";
 export const REPLACE_CANDIDATE_LINE_CAP = 5;
 
 type ReplaceInFileInput = {
+  deferPreviewRecovery?: boolean;
   newText: string;
   oldText: string;
   path: string;
@@ -140,6 +141,9 @@ export async function replaceSandboxFileText(
 
   const writeResult = await sandboxProvider.writeRawFile({
     content,
+    ...(input.deferPreviewRecovery
+      ? { deferPreviewRecovery: true }
+      : {}),
     path: input.path,
     sessionId: input.sessionId,
   });
@@ -169,6 +173,9 @@ export const replaceSandboxAgentTool = {
     const parsedArguments = replaceArgumentsSchema.parse(args);
 
     return replaceSandboxFileText({
+      ...(context.deferPreviewRecovery
+        ? { deferPreviewRecovery: true }
+        : {}),
       newText: parsedArguments.newText,
       oldText: parsedArguments.oldText,
       path: parsedArguments.path,

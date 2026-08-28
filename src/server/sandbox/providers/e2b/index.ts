@@ -1,7 +1,12 @@
 import "server-only";
 
 import { runRawSandboxCommand, runSandboxCommand } from "~/server/sandbox/providers/e2b/command-ops";
-import { readRawSandboxFile, listRawSandboxFiles, writeRawSandboxFile } from "~/server/sandbox/providers/e2b/file-ops";
+import {
+  listRawSandboxFiles,
+  readRawSandboxFile,
+  recoverSandboxPreviewAfterWrites,
+  writeRawSandboxFile,
+} from "~/server/sandbox/providers/e2b/file-ops";
 import {
   cleanupSandboxSession,
   lifecycleProviderMethods,
@@ -30,5 +35,6 @@ export const e2bSandboxProvider: SandboxProvider = {
   submitChanges: submitSandboxChanges,
   listRawFiles: listRawSandboxFiles,
   readRawFile: readRawSandboxFile,
+  recoverPreviewAfterWrites: recoverSandboxPreviewAfterWrites,
   writeRawFile: writeRawSandboxFile,
 };
