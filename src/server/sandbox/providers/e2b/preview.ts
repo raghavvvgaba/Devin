@@ -198,17 +198,44 @@ async function isPreviewProcessRunning(session: E2BSandboxSession) {
   return processes.some((process) => process.pid === session.previewProcessId);
 }
 
+async function isE2BClosedPortResponse(response: Response) {
+  if (
+    response.status !== 502 ||
+    !response.headers.get("content-type")?.includes("application/json")
+  ) {
+    return false;
+  }
+
+  try {
+    const body = (await response.json()) as unknown;
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return false;
+    }
+
+    const error = body as Record<string, unknown>;
+    return (
+      error.code === 502 &&
+      error.port === PREVIEW_PORT &&
+      typeof error.message === "string" &&
+      error.message.toLowerCase().includes("port is not open")
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function isPreviewUrlReachable(
   session: E2BSandboxSession,
   timeoutMs = 4_000,
 ) {
   try {
-    await fetch(session.previewUrl, {
+    const response = await fetch(session.previewUrl, {
       signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
 
-    return true;
+    return !(await isE2BClosedPortResponse(response));
   } catch {
     return false;
   }

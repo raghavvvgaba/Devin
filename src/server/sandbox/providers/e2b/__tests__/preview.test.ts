@@ -193,6 +193,81 @@ describe("checkViteReactPreviewHtml", () => {
 });
 
 describe("recoverPreviewAfterEdit", () => {
+  it("restarts the preview when E2B reports that the port is closed", async () => {
+    const session = createSession();
+    const listMock = vi.fn().mockResolvedValue([]);
+    const killMock = vi.fn().mockResolvedValue(false);
+    const runMock = vi.fn().mockResolvedValue({ pid: 456 });
+    session.sandbox = {
+      commands: {
+        kill: killMock,
+        list: listMock,
+        run: runMock,
+      },
+    } as unknown as E2BSandboxSession["sandbox"];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response(
+          JSON.stringify({
+            code: 502,
+            message: "The sandbox is running but port is not open",
+            port: 5173,
+            sandboxId: "sandbox-test",
+          }),
+          {
+            headers: { "content-type": "application/json; charset=utf-8" },
+            status: 502,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(recoverPreviewAfterEdit(session)).resolves.toBe(true);
+
+    expect(listMock).toHaveBeenCalled();
+    expect(killMock).toHaveBeenCalledWith(123, {
+      requestTimeoutMs: 10_000,
+    });
+    expect(runMock).toHaveBeenCalledWith(session.previewCommand, {
+      background: true,
+      cwd: session.previewCwd,
+      onStderr: expect.any(Function),
+      onStdout: expect.any(Function),
+    });
+    expect(session.previewProcessId).toBe(456);
+    expect(session.previewState).toBe("ready");
+    expect(session.logs.join("")).toContain(
+      "Edit detected preview failure. Attempting one automatic restart.",
+    );
+  });
+
+  it("does not restart for an ordinary application error response", async () => {
+    const session = createSession();
+    const runMock = vi.fn();
+    session.sandbox!.commands.run = runMock;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response("Application error", { status: 500 }))
+      .mockResolvedValueOnce(response("ok"))
+      .mockResolvedValueOnce(
+        response(`<!doctype html>
+          <html>
+            <body>
+              <div id="root">Rendered</div>
+              <script type="module" src="/src/main.jsx"></script>
+            </body>
+          </html>`),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(recoverPreviewAfterEdit(session)).resolves.toBe(true);
+
+    expect(runMock).not.toHaveBeenCalled();
+    expect(session.previewState).toBe("ready");
+  });
+
   it("stores a diagnostic error when the Vite content check finds an error marker", async () => {
     const session = createSession();
     const fetchMock = vi

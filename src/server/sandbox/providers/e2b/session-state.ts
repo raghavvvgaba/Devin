@@ -5,7 +5,6 @@ import {
   HEARTBEAT_INTERVAL_MS,
 } from "~/server/sandbox/providers/e2b/constants";
 import type { E2BSandboxSession } from "~/server/sandbox/providers/e2b/types";
-import { markSandboxSessionStopped } from "~/server/sandbox/session-registry";
 import type {
   PreviewState,
   SandboxSession as PublicSandboxSession,
@@ -221,6 +220,9 @@ export function clearAbandonmentCheck(session: E2BSandboxSession) {
 
 async function persistAbandonedSessionStopped(session: E2BSandboxSession) {
   try {
+    const { markSandboxSessionStopped } = await import(
+      "~/server/sandbox/session-registry"
+    );
     await markSandboxSessionStopped(session.sessionId);
   } catch (error) {
     appendLog(
