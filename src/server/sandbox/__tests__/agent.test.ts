@@ -25,6 +25,7 @@ const {
   globToolExecuteMock,
   listToolExecuteMock,
   readToolExecuteMock,
+  recoverPreviewAfterWritesMock,
   replaceToolExecuteMock,
   runCommandMock,
   searchToolExecuteMock,
@@ -37,6 +38,7 @@ const {
   globToolExecuteMock: vi.fn(),
   listToolExecuteMock: vi.fn(),
   readToolExecuteMock: vi.fn(),
+  recoverPreviewAfterWritesMock: vi.fn(),
   replaceToolExecuteMock: vi.fn(),
   runCommandMock: vi.fn(),
   searchToolExecuteMock: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock("~/server/ai/provider", () => ({
 vi.mock("~/server/sandbox/provider", () => ({
   sandboxProvider: {
     get: getSessionMock,
+    recoverPreviewAfterWrites: recoverPreviewAfterWritesMock,
     runCommand: runCommandMock,
   },
 }));
@@ -99,7 +102,7 @@ function buildRegistryTool(
 }
 
 vi.mock("~/server/sandbox/tools/registry", () => ({
-  getSandboxAgentTool: (name: string) => {
+  getSandboxAgentTool: vi.fn((name: string) => {
     switch (name) {
       case "glob_files":
         return buildRegistryTool(
@@ -140,10 +143,12 @@ vi.mock("~/server/sandbox/tools/registry", () => ({
       default:
         return undefined;
     }
-  },
+  }),
 }));
 
 import { runSandboxAgent } from "../agent";
+import { getSandboxAgentTool } from "../tools/registry";
+import { SandboxAgentToolError } from "../tools/types";
 
 const agentSpanExporter = new InMemorySpanExporter();
 const agentTraceProvider = new BasicTracerProvider({
@@ -151,6 +156,26 @@ const agentTraceProvider = new BasicTracerProvider({
 });
 
 trace.setGlobalTracerProvider(agentTraceProvider);
+
+const privateErrorDetails =
+  "custom-secret-123 https://internal.example.test/private /srv/private/config.txt";
+
+function expectNoPrivateErrorDetailsInSpans() {
+  const spans = agentSpanExporter.getFinishedSpans();
+  expect(spans.length).toBeGreaterThan(0);
+  const exportedData = JSON.stringify(
+    spans.map(({ name, attributes, events, status }) => ({
+      name,
+      attributes,
+      events,
+      status,
+    })),
+  );
+  for (const value of privateErrorDetails.split(" ")) {
+    expect(exportedData).not.toContain(value);
+  }
+  expect(spans.flatMap((span) => span.events)).toEqual([]);
+}
 
 afterAll(async () => {
   await agentTraceProvider.shutdown();
@@ -269,12 +294,14 @@ beforeEach(() => {
   globToolExecuteMock.mockReset();
   listToolExecuteMock.mockReset();
   readToolExecuteMock.mockReset();
+  recoverPreviewAfterWritesMock.mockReset();
   replaceToolExecuteMock.mockReset();
   runCommandMock.mockReset();
   searchToolExecuteMock.mockReset();
   writeToolExecuteMock.mockReset();
 
   getSessionMock.mockResolvedValue(mockSession);
+  recoverPreviewAfterWritesMock.mockResolvedValue(mockSession);
   globToolExecuteMock.mockResolvedValue({
     cap: 100,
     paths: ["src/app/page.tsx"],
@@ -452,7 +479,7 @@ describe("runSandboxAgent", () => {
     const secret = "sk-abcdefghijklmnopqrstuvwxyz123456";
 
     readToolExecuteMock.mockResolvedValueOnce({
-      content: `Bearer ${secret}`,
+      content: `private-tool-output Bearer ${secret}`,
       endLine: 4,
       path: "src/components/Button.tsx",
       size: 120,
@@ -463,7 +490,7 @@ describe("runSandboxAgent", () => {
     generateTextMock
       .mockResolvedValueOnce(
         createModelResponse({
-          text: `I'll inspect the file using ${secret}.`,
+          text: `private-model-output: I'll inspect the file using ${secret}.`,
           toolCalls: [
             createToolCall(
               "read_file",
@@ -553,9 +580,7 @@ describe("runSandboxAgent", () => {
       kind: SpanKind.CLIENT,
       status: { code: SpanStatusCode.OK },
     });
-    expect(modelSpans[0]?.attributes["agent.model.response_preview"]).toContain(
-      "[REDACTED]",
-    );
+    expect(modelSpans[0]?.attributes["agent.model.response_preview"]).toBeUndefined();
     expect(
       modelSpans[0]?.attributes["agent.model.tool_calls_preview"],
     ).toContain("[REDACTED]");
@@ -577,9 +602,15 @@ describe("runSandboxAgent", () => {
     expect(toolSpan?.attributes["agent.tool.arguments_preview"]).toContain(
       "[REDACTED]",
     );
-    expect(toolSpan?.attributes["agent.tool.result_preview"]).toContain(
-      "[REDACTED]",
-    );
+    expect(toolSpan?.attributes["agent.tool.result_preview"]).toBeUndefined();
+    expect(toolSpan?.attributes["agent.tool.observation_preview"]).toBeUndefined();
+    for (const span of spans) {
+      expect(span.attributes).not.toHaveProperty("agent.model.response_preview");
+      expect(span.attributes).not.toHaveProperty("agent.tool.result_preview");
+      expect(span.attributes).not.toHaveProperty("agent.tool.observation_preview");
+      expect(JSON.stringify(span.attributes)).not.toContain("private-model-output");
+      expect(JSON.stringify(span.attributes)).not.toContain("private-tool-output");
+    }
     expect(JSON.stringify(toolSpan?.attributes)).not.toContain(secret);
     expect(toolSpan?.spanContext().traceId).toBe(
       agentRunSpan?.spanContext().traceId,
@@ -587,6 +618,12 @@ describe("runSandboxAgent", () => {
 
     expect(traceEvents.map((event) => event.type)).toContain("model_response");
     expect(traceEvents.map((event) => event.type)).toContain("tool_result");
+    expect(
+      traceEvents.find((event) => event.type === "model_response")?.payload.textPreview,
+    ).toContain("private-model-output");
+    const toolActivity = traceEvents.find((event) => event.type === "tool_result");
+    expect(toolActivity?.payload.toolMessagePreview).toContain("private-tool-output");
+    expect(toolActivity?.payload.latestObservationPreview).toContain("private-tool-output");
     expect(
       traceEvents.find((event) => event.type === "tool_result"),
     ).toMatchObject({
@@ -603,7 +640,7 @@ describe("runSandboxAgent", () => {
 
   it("marks model and tool failures on their semantic spans", async () => {
     generateTextMock.mockRejectedValueOnce(
-      new Error("OpenRouter rate limited this request"),
+      new Error(`OpenRouter rate limited this request: ${privateErrorDetails}`),
     );
 
     await runSandboxAgent({
@@ -625,6 +662,8 @@ describe("runSandboxAgent", () => {
         message: "The AI model is rate limited right now. Please try again.",
       },
     });
+
+    expectNoPrivateErrorDetailsInSpans();
 
     agentSpanExporter.reset();
     generateTextMock
@@ -659,8 +698,100 @@ describe("runSandboxAgent", () => {
         "gen_ai.operation.name": "execute_tool",
         "gen_ai.tool.name": "unknown_tool",
       },
-      status: { code: SpanStatusCode.ERROR },
+      status: { code: SpanStatusCode.ERROR, message: "Tool execution failed." },
     });
+  });
+
+  it.each([
+    [new Error(privateErrorDetails), "tool_execution_failed"],
+    [privateErrorDetails, "unknown_tool_error"],
+    [
+      new SandboxAgentToolError(privateErrorDetails, { code: "replacement_too_large" }),
+      "replacement_too_large",
+    ],
+    [
+      new SandboxAgentToolError(privateErrorDetails, { code: privateErrorDetails }),
+      "tool_execution_failed",
+    ],
+  ])("exports safe categories for tool failures (%#)", async (error, errorType) => {
+    const traceEvents: SandboxAgentTraceEvent[] = [];
+    readToolExecuteMock.mockRejectedValueOnce(error);
+    generateTextMock
+      .mockResolvedValueOnce(createModelResponse({
+        toolCalls: [createToolCall("read_file", { path: "src/file.ts" })],
+      }))
+      .mockResolvedValueOnce(createModelResponse({ text: "I'll stop here." }))
+      .mockResolvedValueOnce(createModelResponse({
+        text: JSON.stringify({ status: "blocked", message: "Unable to read the file." }),
+      }));
+
+    await runSandboxAgent(baseInput, {
+      onTrace(event) { traceEvents.push(event); },
+    });
+
+    expect(agentSpanExporter.getFinishedSpans().find(
+      (span) => span.name === "execute_tool read_file",
+    )).toMatchObject({
+      attributes: { "error.type": errorType, "agent.tool.status": "tool_failure" },
+      status: { code: SpanStatusCode.ERROR, message: "Tool execution failed." },
+    });
+    expectNoPrivateErrorDetailsInSpans();
+    // The controller/activity error retains its detail; only OTel is hardened.
+    if (error instanceof Error) {
+      expect(traceEvents.find((event) => event.type === "tool_result")?.payload.message)
+        .toBe(privateErrorDetails);
+    }
+  });
+
+  it("does not export unexpected tool or agent-run exception details", async () => {
+    const error = new Error(privateErrorDetails);
+    error.name = privateErrorDetails;
+    vi.mocked(getSandboxAgentTool).mockImplementationOnce(() => { throw error; });
+    generateTextMock.mockResolvedValueOnce(createModelResponse({
+      toolCalls: [createToolCall("read_file", { path: "src/file.ts" })],
+    }));
+
+    await expect(runSandboxAgent(baseInput)).rejects.toBe(error);
+
+    const spans = agentSpanExporter.getFinishedSpans();
+    expect(spans.find((span) => span.name === "execute_tool read_file")).toMatchObject({
+      attributes: { "error.type": "tool_execution_failed", "agent.tool.status": "failed" },
+      status: { code: SpanStatusCode.ERROR, message: "Tool execution failed." },
+    });
+    expect(spans.find((span) => span.name === "sandbox_agent.run")).toMatchObject({
+      attributes: {
+        "error.type": "agent_run_failed",
+        "conversation.session_id": baseInput.conversationSessionId,
+      },
+      status: { code: SpanStatusCode.ERROR, message: "Agent run failed." },
+    });
+    expectNoPrivateErrorDetailsInSpans();
+  });
+
+  it("does not export write-batch preview recovery exception details", async () => {
+    recoverPreviewAfterWritesMock.mockRejectedValueOnce(new Error(privateErrorDetails));
+    generateTextMock.mockResolvedValueOnce(createModelResponse({
+      toolCalls: [
+        createToolCall("write_file", { path: "src/a.ts", content: "a" }, "write-a"),
+        createToolCall("write_file", { path: "src/b.ts", content: "b" }, "write-b"),
+      ],
+    }));
+
+    const result = await runSandboxAgent(baseInput);
+
+    expect(recoverPreviewAfterWritesMock).toHaveBeenCalledOnce();
+    expect(result.message).toContain(privateErrorDetails);
+    expect(agentSpanExporter.getFinishedSpans().find(
+      (span) => span.name === "recover_write_batch_preview",
+    )).toMatchObject({
+      attributes: {
+        "agent.write_batch.successful_write_count": 2,
+        "agent.write_batch.recovery_completed": false,
+        "error.type": "preview_recovery_failed",
+      },
+      status: { code: SpanStatusCode.ERROR, message: "Preview recovery failed." },
+    });
+    expectNoPrivateErrorDetailsInSpans();
   });
 
   it("places persisted conversation history before the current instruction", async () => {

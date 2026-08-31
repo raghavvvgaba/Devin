@@ -77,6 +77,8 @@ Server-side variables:
 - `OTEL_TRACES_EXPORTER` — `"otlp"` (default), `"console"`, or `"none"`
 - `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` — complete OTLP/HTTP trace endpoint;
   defaults to `http://localhost:4318/v1/traces`
+- `OTEL_EXPORTER_OTLP_HEADERS` — optional OTLP authentication headers supplied
+  by a hosted tracing provider; keep this value secret
 - `E2B_API_KEY`
 - `E2B_SANDBOX_TEMPLATE`
 

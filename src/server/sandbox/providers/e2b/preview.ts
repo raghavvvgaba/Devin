@@ -45,11 +45,10 @@ async function tracePreviewStage<T>(
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (error) {
-        const exception = error instanceof Error ? error : new Error(String(error));
-        span.recordException(exception);
+        span.setAttribute("error.type", "preview_stage_failed");
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: exception.message,
+          message: "Preview stage failed.",
         });
         throw error;
       } finally {

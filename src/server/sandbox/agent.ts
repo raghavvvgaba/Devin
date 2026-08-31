@@ -28,6 +28,7 @@ import {
   parseToolResultForTrace,
   sanitizeTracePayload,
   sanitizeToolArguments,
+  toToolSpanErrorType,
   toTracePreview,
   type SandboxAgentTraceEvent,
   type SandboxAgentTraceHandler,
@@ -711,13 +712,6 @@ async function traceAgentModelRequest(input: {
           "gen_ai.response.model": response.model,
         });
 
-        if (summary.textPreview) {
-          span.setAttribute(
-            "agent.model.response_preview",
-            summary.textPreview,
-          );
-        }
-
         if (summary.toolCalls.length > 0) {
           span.setAttribute(
             "agent.model.tool_calls_preview",
@@ -754,11 +748,8 @@ async function traceAgentModelRequest(input: {
         span.setStatus({ code: SpanStatusCode.OK });
         return response;
       } catch (error) {
-        const exception =
-          error instanceof Error ? error : new Error(String(error));
         const mappedError = mapModelError(error);
 
-        span.recordException(exception);
         span.setAttributes({
           "agent.model.status": "failed",
           "error.type": mappedError.code,
@@ -1389,40 +1380,31 @@ async function executeToolCall(
           span.setAttribute("agent.tool.paths", summary.paths);
         }
 
-        if (summary.latestObservationPreview) {
-          span.setAttribute(
-            "agent.tool.observation_preview",
-            summary.latestObservationPreview,
-          );
-        }
-
-        if (summary.resultPreview) {
-          span.setAttribute("agent.tool.result_preview", summary.resultPreview);
-        }
-
         if (result.status === "ok") {
           span.setStatus({ code: SpanStatusCode.OK });
         } else {
-          span.setAttribute("error.type", result.code);
+          span.setAttribute(
+            "error.type",
+            toToolSpanErrorType(
+              result.code,
+              result.status === "tool_failure" && result.argumentValidationFailure,
+            ),
+          );
           span.setStatus({
             code: SpanStatusCode.ERROR,
-            message: result.message,
+            message: "Tool execution failed.",
           });
         }
 
         return result;
       } catch (error) {
-        const exception =
-          error instanceof Error ? error : new Error(String(error));
-
-        span.recordException(exception);
         span.setAttributes({
           "agent.tool.status": "failed",
-          "error.type": exception.name || "Error",
+          "error.type": "tool_execution_failed",
         });
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: toTracePreview(exception.message, 220),
+          message: "Tool execution failed.",
         });
         throw error;
       } finally {
@@ -1731,17 +1713,13 @@ async function recoverWriteBatchPreview(
         span.setStatus({ code: SpanStatusCode.OK });
         return session;
       } catch (error) {
-        const exception =
-          error instanceof Error ? error : new Error(String(error));
-
-        span.recordException(exception);
         span.setAttributes({
           "agent.write_batch.recovery_completed": false,
-          "error.type": exception.name || "Error",
+          "error.type": "preview_recovery_failed",
         });
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: toTracePreview(exception.message, 220),
+          message: "Preview recovery failed.",
         });
         throw error;
       } finally {
@@ -2438,13 +2416,10 @@ export async function runSandboxAgent(
         recordAgentRunSpanResult(span, result);
         return result;
       } catch (error) {
-        const exception =
-          error instanceof Error ? error : new Error(String(error));
-
-        span.recordException(exception);
+        span.setAttribute("error.type", "agent_run_failed");
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: exception.message,
+          message: "Agent run failed.",
         });
         throw error;
       } finally {

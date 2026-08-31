@@ -43,6 +43,46 @@ const SECRET_VALUE_PATTERNS = [
 const MAX_TRACE_STRING_LENGTH = 500;
 const MAX_TRACE_ARRAY_LENGTH = 40;
 
+const SAFE_TOOL_SPAN_ERROR_CODES = new Set([
+  "ambiguous_text_match",
+  "command_not_allowed",
+  "file_too_large",
+  "glob_failed",
+  "internal_error",
+  "invalid_include_pattern",
+  "invalid_line_range",
+  "invalid_path",
+  "invalid_pattern",
+  "invalid_tool_arguments_json",
+  "invalid_tool_batch",
+  "missing_old_text",
+  "missing_path",
+  "missing_patterns",
+  "missing_query",
+  "replacement_too_large",
+  "search_failed",
+  "skipped_due_to_prior_write_failure",
+  "text_not_found",
+  "tool_retry_exhausted",
+  "unknown_tool",
+  "unknown_tool_error",
+  "write_batch_limit_exceeded",
+  "write_not_allowed_in_plan_mode",
+]);
+
+// Controller codes can fall back to raw error messages. Only export known codes;
+// leave the original errors intact for controller feedback and activity logs.
+export function toToolSpanErrorType(code: string, argumentValidationFailure = false) {
+  const category = code.split(":", 1)[0] ?? "";
+  if (SAFE_TOOL_SPAN_ERROR_CODES.has(category)) {
+    return category;
+  }
+
+  return argumentValidationFailure
+    ? "invalid_tool_arguments"
+    : "tool_execution_failed";
+}
+
 function redactSensitiveText(value: string) {
   return SECRET_VALUE_PATTERNS.reduce(
     (text, pattern) => text.replace(pattern, "[REDACTED]"),

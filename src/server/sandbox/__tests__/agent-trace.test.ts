@@ -4,7 +4,23 @@ import {
   collectToolPaths,
   sanitizeToolArguments,
   toTracePreview,
+  toToolSpanErrorType,
 } from "../agent-trace";
+
+describe("toToolSpanErrorType", () => {
+  it.each([
+    ["replacement_too_large", false, "replacement_too_large"],
+    ["text_not_found: private source details", false, "text_not_found"],
+    ["ambiguous_text_match: private source details", false, "ambiguous_text_match"],
+    ["invalid_tool_arguments_json", true, "invalid_tool_arguments_json"],
+    ["private validation details", true, "invalid_tool_arguments"],
+    ["custom_secret_value", false, "tool_execution_failed"],
+    ["https://private.test/path", false, "tool_execution_failed"],
+    ["", false, "tool_execution_failed"],
+  ])("normalizes %s without exporting arbitrary error text", (code, invalid, expected) => {
+    expect(toToolSpanErrorType(code, invalid)).toBe(expected);
+  });
+});
 
 describe("sanitizeToolArguments", () => {
   it("keeps file metadata without persisting write contents", () => {

@@ -26,6 +26,7 @@ export const env = createEnv({
       .string()
       .url()
       .default("http://localhost:4318/v1/traces"),
+    OTEL_EXPORTER_OTLP_HEADERS: z.string().min(1).optional(),
     E2B_API_KEY: z.string().min(1).optional(),
     E2B_SANDBOX_TEMPLATE: z
       .string()
@@ -68,6 +69,7 @@ export const env = createEnv({
     OTEL_TRACES_EXPORTER: process.env.OTEL_TRACES_EXPORTER,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
       process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+    OTEL_EXPORTER_OTLP_HEADERS: process.env.OTEL_EXPORTER_OTLP_HEADERS,
     E2B_API_KEY: process.env.E2B_API_KEY,
     E2B_SANDBOX_TEMPLATE: process.env.E2B_SANDBOX_TEMPLATE,
     NODE_ENV: process.env.NODE_ENV,

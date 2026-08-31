@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { E2BSandboxSession } from "../types";
 
@@ -37,9 +43,19 @@ vi.mock("playwright", () => ({
 }));
 
 import {
+  checkViteReactPreviewBrowser,
   checkViteReactPreviewHtml,
   recoverPreviewAfterEdit,
 } from "../preview";
+
+const spanExporter = new InMemorySpanExporter();
+const traceProvider = new BasicTracerProvider({
+  spanProcessors: [new SimpleSpanProcessor(spanExporter)],
+});
+trace.setGlobalTracerProvider(traceProvider);
+afterAll(async () => {
+  await traceProvider.shutdown();
+});
 
 function createSession(): E2BSandboxSession {
   return {
@@ -68,6 +84,7 @@ function response(body: string, init?: ResponseInit) {
 }
 
 beforeEach(() => {
+  spanExporter.reset();
   verifySandboxHealthMock.mockReset();
   browserCloseMock.mockReset();
   browserNewPageMock.mockReset();
@@ -102,6 +119,37 @@ beforeEach(() => {
   chromiumLaunchMock.mockResolvedValue({
     close: browserCloseMock,
     newPage: browserNewPageMock,
+  });
+});
+
+describe("preview span errors", () => {
+  it.each(["launch", "navigate"])("does not export %s exception details", async (stage) => {
+    const privateDetails =
+      "custom-secret-456 https://internal.example.test/private /srv/private/preview.ts";
+    const error = new Error(privateDetails);
+    error.name = privateDetails;
+    const failingMock = stage === "launch" ? chromiumLaunchMock : pageGotoMock;
+    failingMock.mockRejectedValueOnce(error);
+
+    const result = await checkViteReactPreviewBrowser(createSession());
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "browser_check_failed",
+      details: privateDetails,
+    });
+    const spans = spanExporter.getFinishedSpans();
+    expect(spans.find((span) => span.name === `preview browser_${stage}`)).toMatchObject({
+      attributes: { "error.type": "preview_stage_failed" },
+      status: { code: SpanStatusCode.ERROR, message: "Preview stage failed." },
+    });
+    const exportedData = JSON.stringify(spans.map(({ attributes, events, status }) => ({
+      attributes, events, status,
+    })));
+    for (const value of privateDetails.split(" ")) {
+      expect(exportedData).not.toContain(value);
+    }
+    expect(spans.flatMap((span) => span.events)).toEqual([]);
   });
 });
 
